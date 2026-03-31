@@ -1,0 +1,2342 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INTOBAR</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script>
+    // Mock SDK for localStorage-based data persistence
+    window.elementSdk = {
+      config: {
+        main_title: "INTOBAR",
+        subtitle_text: "Learn Kadazandusun vocabulary through flashcards & spelling",
+        study_title: "Study Guide",
+        background_color: "#f3e8ff",
+        surface_color: "#ede9fe",
+        text_color: "#1a1a1a",
+        accent_color: "#a855f7",
+        secondary_color: "#9333ea",
+        font_family: "Bricolage Grotesque",
+        font_size: 16
+      },
+      init: function(config) {
+        console.log("Mock elementSdk initialized");
+        return { isOk: true };
+      },
+      setConfig: function(config) {
+        Object.assign(window.elementSdk.config, config);
+        console.log("Config updated:", config);
+      }
+    };
+
+    window.dataSdk = {
+      _data: JSON.parse(localStorage.getItem('intobar_data') || '[]'),
+      _listeners: [],
+
+      init: function(handler) {
+        this._handler = handler;
+        console.log("Mock dataSdk initialized");
+        // Load existing data
+        this._notifyListeners();
+        return { isOk: true };
+      },
+
+      create: function(item) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            try {
+              // Add unique ID
+              item.__backendId = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+              item.created_at = new Date().toISOString();
+
+              this._data.push(item);
+              this._save();
+              this._notifyListeners();
+
+              resolve({ isOk: true, data: item });
+            } catch (error) {
+              console.error("Create error:", error);
+              resolve({ isOk: false, error: { message: error.message } });
+            }
+          }, 100); // Simulate network delay
+        });
+      },
+
+      delete: function(item) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            try {
+              const index = this._data.findIndex(d => d.__backendId === item.__backendId);
+              if (index > -1) {
+                this._data.splice(index, 1);
+                this._save();
+                this._notifyListeners();
+                resolve({ isOk: true });
+              } else {
+                resolve({ isOk: false, error: { message: "Item not found" } });
+              }
+            } catch (error) {
+              resolve({ isOk: false, error: { message: error.message } });
+            }
+          }, 100);
+        });
+      },
+
+      _save: function() {
+        localStorage.setItem('intobar_data', JSON.stringify(this._data));
+      },
+
+      _notifyListeners: function() {
+        if (this._handler && this._handler.onDataChanged) {
+          this._handler.onDataChanged(this._data);
+        }
+      }
+    };
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    .font-heading { font-family: 'Bricolage Grotesque', sans-serif; }
+    .font-body { font-family: 'DM Sans', sans-serif; }
+    .card-flip { perspective: 1000px; }
+    .card-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+    .card-inner.flipped { transform: rotateY(180deg); }
+    .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+    .card-back { transform: rotateY(180deg); }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 70% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+    .anim-slide-up { animation: slideUp 0.5s ease-out forwards; }
+    .anim-pop { animation: popIn 0.4s ease-out forwards; }
+    .anim-shake { animation: shake 0.4s ease-out; }
+    .tab-active { border-bottom: 3px solid; font-weight: 700; }
+    .spelling-input:focus { outline: none; }
+    .progress-dot { width: 10px; height: 10px; border-radius: 50%; transition: all 0.3s ease; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 12px; font-weight: 600; z-index: 100; animation: slideUp 0.3s ease-out; }
+  </style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full font-body">
+  <div id="app" class="h-full w-full overflow-auto" style="background: linear-gradient(135deg, #f8f9fa, #ffffff);"><!-- Header -->
+   <header class="text-center pt-8 pb-4 px-4 anim-slide-up">
+    <h1 id="mainTitle" class="font-heading text-3xl md:text-4xl font-800 tracking-tight" style="color: #1a1a1a;">INTOBAR</h1>
+    <p id="subtitleText" class="mt-2 text-lg font-500" style="color: #666666;">Learn Kadazandusun vocabulary through flashcards &amp; spelling</p>
+    <div class="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-600" style="background: #e8f4f8; border: 1px solid #b3dce8; color: #0066aa;"><i data-lucide="users" style="width:14px;height:14px;"></i> <span id="visitorCount">0</span> learners today
+    </div>
+   </header><!-- Tabs -->
+   <nav class="flex justify-center gap-1 px-4 mt-2 mb-6 flex-wrap" role="tablist"><button onclick="switchTab('flashcard')" id="tabFlashcard" class="tab-btn tab-active px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #1a1a1a; border-color: #ff6b6b;" role="tab" aria-selected="true"> <i data-lucide="layers" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Flashcards </button> <button onclick="switchTab('spelling')" id="tabSpelling" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="pen-tool" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Spelling </button> <button onclick="switchTab('pronunciation')" id="tabPronunciation" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="mic" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Pronunciation </button> <button onclick="switchTab('manage')" id="tabManage" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="settings" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Manage Cards </button> <button onclick="switchTab('gameroom')" id="tabGameroom" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="users" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Game Room </button> <button onclick="switchTab('leaderboard')" id="tabLeaderboard" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="trophy" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Leaderboard </button> <button onclick="switchTab('competition')" id="tabCompetition" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="gamepad2" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Competition </button> <button onclick="switchTab('announcements')" id="tabAnnouncements" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="megaphone" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Announcements </button> <button onclick="switchTab('study')" id="tabStudy" class="tab-btn px-6 py-3 text-sm font-600 rounded-t-xl transition-all" style="color: #666666;" role="tab" aria-selected="false"> <i data-lucide="book-open" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:6px;"></i>Study Guide </button>
+   </nav><!-- Difficulty & Category Filter -->
+   <div class="flex justify-center gap-2 px-4 mb-3 flex-wrap" id="difficultyFilter"></div><!-- Category Filter -->
+   <div class="flex justify-center gap-2 px-4 mb-6 flex-wrap" id="categoryFilter"></div><!-- FLASHCARD VIEW -->
+   <main id="flashcardView" class="px-4 pb-8">
+    <div class="max-w-md mx-auto"><!-- Card -->
+     <div class="card-flip mx-auto" style="height: 280px; max-width: 380px;">
+      <div id="cardInner" class="card-inner cursor-pointer" onclick="flipCard()">
+       <div class="card-front" style="background: linear-gradient(135deg, #dcfce7, #bbf7d0); border: 2px solid #86efac;">
+        <img id="cardImage" src="" alt="Card image" loading="lazy" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; margin-bottom: 8px; display: none;" onerror="this.style.display='none';"> <span class="text-5xl mb-4" id="cardEmoji">🌺</span>
+        <p class="font-heading text-3xl font-700 mb-2" id="cardWord" style="color: #166534;">Bunga</p>
+        <p class="text-sm font-500" id="cardCategory" style="color: #4b7c4e;">Tap to reveal</p>
+       </div>
+       <div class="card-back" style="background: linear-gradient(135deg, #dcfce7, #a7f3d0); border: 2px solid #6ee7b7;">
+        <img id="cardImageBack" src="" alt="Card image" loading="lazy" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; margin-bottom: 8px; display: none;" onerror="this.style.display='none';"> <span class="text-5xl mb-4" id="cardEmojiBack">🌺</span>
+        <p class="font-heading text-2xl font-700 mb-1" id="cardTranslation" style="color: #ff6b6b;">Flower</p>
+        <p class="text-lg font-500 mb-1" id="cardWordBack" style="color: #1a1a1a;">Bunga</p>
+        <p class="text-sm font-500 mb-2" id="cardMalay" style="color: #0066aa;">Bunga</p>
+        <p class="text-sm italic" id="cardExample" style="color: #666666;">"Aid bunga diti mantad."</p>
+       </div>
+      </div>
+     </div><!-- Progress Dots -->
+     <div class="flex justify-center gap-2 mt-6" id="progressDots"></div><!-- Controls -->
+     <div class="flex justify-center items-center gap-4 mt-6">
+      <button onclick="prevCard()" class="p-3 rounded-full transition-all hover:scale-110" style="background: #f0f0f0; color: #999999;" aria-label="Previous card"> <i data-lucide="chevron-left" style="width:24px;height:24px;"></i> </button> <button onclick="shuffleCards()" class="px-5 py-2.5 rounded-xl font-600 text-sm transition-all hover:scale-105" style="background: #ff6b6b; color: #ffffff;" aria-label="Shuffle cards"> <i data-lucide="shuffle" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Shuffle </button> <button onclick="nextCard()" class="p-3 rounded-full transition-all hover:scale-110" style="background: #f0f0f0; color: #999999;" aria-label="Next card"> <i data-lucide="chevron-right" style="width:24px;height:24px;"></i> </button>
+     </div><!-- Counter -->
+     <p class="text-center mt-4 text-sm font-500" style="color: #999999;" id="cardCounter">1 / 2</p>
+    </div>
+   </main><!-- PRONUNCIATION VIEW -->
+   <main id="pronunciationView" class="px-4 pb-8 hidden">
+    <div class="max-w-md mx-auto">
+     <div class="rounded-2xl p-6 text-center" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+      <p class="text-sm font-500 mb-4" style="color: #7b9fcc;">🎤 Say this word out loud:</p><span class="text-5xl block my-3" id="pronEmoji">🌺</span> <img id="pronImage" src="" alt="Pronunciation image" loading="lazy" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; margin: 8px auto; display: none;" onerror="this.style.display='none';">
+      <p class="font-heading text-2xl font-700 mb-2" id="pronWord" style="color: #f0e6d3;">Bunga</p>
+      <p class="text-sm mb-4" id="pronTranslation" style="color: #e8a44a;">Flower</p>
+      <div class="flex justify-center gap-3 mb-4 flex-wrap">
+       <button onclick="playPronunciation()" id="playBtn" class="px-6 py-3 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #8b5cf6; color: #fff;"> <i data-lucide="volume-2" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Play Standard </button> <button onclick="initDataSDK()" id="listenBtn" class="px-6 py-3 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #06b6d4; color: #0f1a2e;"> <i data-lucide="mic" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Check My Voice </button> <button onclick="openSetStandardModal()" id="recordTeacherBtn" class="px-6 py-3 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #ec4899; color: #fff;"> <i data-lucide="radio" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Set Standard </button> <button onclick="skipPronunciation()" class="px-4 py-3 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #243b5e; color: #7b9fcc;"> Skip<i data-lucide="arrow-right" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-left:4px;"></i> </button>
+      </div>
+      <div id="recordingIndicator" class="mt-3 hidden text-center">
+       <p class="text-xs font-600 mb-2" style="color: #ec4899;"><i data-lucide="radio" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Recording...</p><button onclick="stopRecording()" class="px-4 py-2 rounded-lg text-xs font-600 transition-all hover:scale-105" style="background: #ec4899; color: #fff;">Stop Recording</button>
+      </div>
+      <div id="pronFeedback" class="mt-4 py-2 px-4 rounded-xl text-sm font-600 hidden"></div>
+      <p id="recognitionStatus" class="text-xs mt-3" style="color: #7b9fcc;"></p>
+     </div><!-- Set Standard Voice Modal -->
+     <div id="setStandardModal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-50" style="backdrop-filter: blur(4px);">
+      <div class="rounded-2xl p-6 max-w-sm w-full mx-4" style="background: #1a2d4a; border: 2px solid #e8a44a;">
+       <div class="text-center mb-6">
+        <i data-lucide="lock" style="width:48px;height:48px;color:#e8a44a;margin:0 auto 16px;display:block;"></i>
+        <h2 class="font-heading text-2xl font-700 mb-2" style="color: #f0e6d3;">🔐 Admin Only</h2>
+        <p class="text-sm" style="color: #7b9fcc;">Enter password to set standard voice</p>
+       </div>
+       <div class="space-y-3 mb-4">
+        <input id="standardVoicePassword" type="password" placeholder="Enter password..." class="spelling-input w-full px-4 py-3 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;">
+       </div>
+       <div class="flex gap-3">
+        <button onclick="verifyStandardVoicePassword()" class="flex-1 px-4 py-3 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;"><i data-lucide="unlock" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Unlock</button> <button onclick="closeSetStandardModal()" class="flex-1 px-4 py-3 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #243b5e; color: #7b9fcc;"><i data-lucide="x" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Cancel</button>
+       </div>
+       <p class="text-xs text-center mt-4" style="color: #7b9fcc;">💡 Hint: Check your BKD email</p>
+      </div>
+     </div>
+     <div class="flex justify-center gap-6 mt-6 flex-wrap">
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #122a1a;">
+       <p class="text-2xl font-heading font-800" style="color: #4ade80;" id="pronCorrect">0</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Correct</p>
+      </div>
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #2a1218;">
+       <p class="text-2xl font-heading font-800" style="color: #f87171;" id="pronWrong">0</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Incorrect</p>
+      </div>
+     </div>
+    </div>
+   </main><!-- SPELLING VIEW -->
+   <main id="spellingView" class="px-4 pb-8 hidden">
+    <div class="max-w-md mx-auto">
+     <div class="rounded-2xl p-6 text-center" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+      <div class="flex justify-between items-center mb-4">
+       <p class="text-sm font-500" style="color: #7b9fcc;">Spell this word:</p>
+       <div class="flex items-center gap-2">
+        <i data-lucide="clock" style="width:16px;height:16px;color:#e8a44a;"></i> <span id="timerDisplay" class="font-heading font-700 text-lg" style="color: #e8a44a;">30s</span>
+       </div>
+      </div><span class="text-5xl block my-3" id="spellEmoji">🌺</span> <img id="spellImage" src="" alt="Spelling image" loading="lazy" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; margin: 8px auto; display: none;" onerror="this.style.display='none';">
+      <p class="font-heading text-2xl font-700 mb-1" id="spellEnglish" style="color: #e8a44a;">Flower</p>
+      <p class="text-sm mb-4 italic" id="spellHint" style="color: #7b9fcc;"></p>
+      <div class="flex justify-center mb-4">
+       <label for="spellInput" class="sr-only">Type the Kadazandusun word</label> <input id="spellInput" type="text" autocomplete="off" placeholder="Type here..." class="spelling-input w-full max-w-xs text-center text-xl font-heading font-700 py-3 px-4 rounded-xl border-2 transition-all" style="background: #0f1a2e; color: #f0e6d3; border-color: #2a4a6e;" onkeydown="if(event.key==='Enter') checkSpelling()">
+      </div>
+      <div class="flex justify-center gap-3">
+       <button onclick="showHint()" class="px-4 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #243b5e; color: #7b9fcc;"> <i data-lucide="lightbulb" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Hint </button> <button onclick="checkSpelling()" class="px-6 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"> <i data-lucide="check" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Check </button> <button onclick="skipSpelling()" class="px-4 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #243b5e; color: #7b9fcc;"> Skip<i data-lucide="arrow-right" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-left:4px;"></i> </button>
+       <div id="competitionLeaveBtn"></div>
+      </div><!-- Feedback area -->
+      <div id="spellFeedback" class="mt-4 py-2 px-4 rounded-xl text-sm font-600 hidden"></div>
+     </div><!-- Score -->
+     <div class="flex justify-center gap-6 mt-6 flex-wrap">
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #122a1a;">
+       <p class="text-2xl font-heading font-800" style="color: #4ade80;" id="scoreCorrect">0</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Correct</p>
+      </div>
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #2a1218;">
+       <p class="text-2xl font-heading font-800" style="color: #f87171;" id="scoreWrong">0</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Incorrect</p>
+      </div>
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #1a2d4a;">
+       <p class="text-2xl font-heading font-800" style="color: #e8a44a;" id="scoreStreak">0</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Streak 🔥</p>
+      </div>
+      <div class="text-center px-5 py-3 rounded-xl" style="background: #1a2d4a;">
+       <p class="text-2xl font-heading font-800" style="color: #06b6d4;" id="scoreMultiplier">1x</p>
+       <p class="text-xs font-500" style="color: #7b9fcc;">Multiplier ⚡</p>
+      </div>
+     </div>
+    </div>
+   </main><!-- MANAGE CARDS VIEW -->
+   <main id="manageView" class="px-4 pb-8 hidden">
+    <div class="max-w-2xl mx-auto"><!-- Admin Password Section -->
+     <div id="managePasswordSection" class="mb-6 rounded-2xl p-8 text-center" style="background: #1a2d4a; border: 2px solid #e8a44a;"><i data-lucide="lock" style="width:48px;height:48px;color:#e8a44a;margin:0 auto 16px;display:block;"></i>
+      <h2 class="font-heading text-2xl font-700 mb-4" style="color: #f0e6d3;">🔐 Admin Only</h2>
+      <p class="text-sm mb-6" style="color: #7b9fcc;">Only you can manage cards. Enter admin password.</p>
+      <div class="flex gap-2 justify-center mb-4"><input id="adminPassword" type="password" placeholder="Enter password..." class="spelling-input px-4 py-3 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e; width: 200px;"> <button onclick="verifyAdminPassword()" class="px-6 py-3 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;"><i data-lucide="unlock" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Unlock</button>
+      </div>
+      <p class="text-xs" style="color: #7b9fcc;">💡 Hint: Check your BKD email</p>
+     </div><!-- Manage Cards Content -->
+     <div id="manageCardsContent" class="hidden">
+      <div class="mb-6 rounded-2xl p-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+       <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">Add New Flashcard</h2>
+       <div class="space-y-3"><input id="newCardKadazandusun" type="text" placeholder="Kadazandusun word..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <input id="newCardEnglish" type="text" placeholder="English translation..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <input id="newCardMalay" type="text" placeholder="Malay translation..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;">
+        <div class="rounded-lg p-3" style="background: #0f1a2e; border: 2px solid #2a4a6e;"><label for="newCardEmoji" class="text-xs font-600 block mb-2" style="color: #7b9fcc;">Card Emoji</label> <input id="newCardEmoji" type="text" placeholder="🌺" class="spelling-input w-full px-2 py-1 rounded text-center text-2xl mb-3" style="background: #1a2d4a; color: #f0e6d3; border: 1px solid #2a4a6e;" maxlength="2"> <label for="newCardImageUrl" class="text-xs font-600 block mb-2" style="color: #7b9fcc;">Image URL (optional)</label> <input id="newCardImageUrl" type="url" placeholder="https://example.com/image.jpg" class="spelling-input w-full px-2 py-1 rounded text-sm mb-2" style="background: #1a2d4a; color: #f0e6d3; border: 1px solid #2a4a6e;">
+         <div class="text-xs mb-2" style="color: #7b9fcc;">Or upload an image:</div> <input id="newCardImageFile" type="file" accept="image/*" class="spelling-input w-full px-2 py-1 rounded text-sm mb-2" style="background: #1a2d4a; color: #f0e6d3; border: 1px solid #2a4a6e;" onchange="previewImageFile()">
+         <div id="imagePreview" class="hidden mt-2 p-2 rounded" style="background: #1a2d4a; border: 1px solid #2a4a6e;"><img id="previewImg" src="" alt="Preview" loading="lazy" style="width: 60px; height: 60px; border-radius: 8px; border: 1px solid #2a4a6e;" onerror="this.style.display='none';"> <button type="button" onclick="clearImageUpload()" class="text-xs mt-1" style="color: #f87171;">Clear preview</button>
+         </div>
+        </div><select id="newCardCategory" class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <option value="">Select category...</option> <option>Nature</option> <option>People</option> <option>Actions</option> <option>Describing</option> <option>Things</option> <option>Animals</option> <option>Food</option> <option>Greetings</option> </select> <select id="newCardDifficulty" class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <option value="">Select difficulty...</option> <option value="1">🟢 Mudah (Easy)</option> <option value="2">🟡 Sederhana (Medium)</option> <option value="3">🔴 Mencabar (Hard)</option> </select> <input id="newCardExample" type="text" placeholder="Example sentence in Kadazandusun..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <input id="newCardExampleMalay" type="text" placeholder="Example in Malay (optional)..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <input id="newCardPronunciation" type="text" placeholder="Pronunciation guide (e.g., 'boo-nga')..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <button onclick="addCustomCard()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="plus" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Add Card</button>
+       </div>
+      </div>
+      <div>
+       <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">Your Custom Cards</h2>
+       <div id="customCardsList" class="space-y-2"></div>
+       <div id="emptyCustomCards" class="text-center py-8">
+        <p style="color: #7b9fcc;" class="text-sm">No custom cards yet. Add some to get started!</p>
+       </div>
+      </div>
+     </div>
+    </div>
+   </main>
+   <main id="gameroomView" class="px-4 pb-8 hidden">
+    <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6"><!-- Left: Room Setup -->
+     <div class="lg:col-span-2"><!-- Create & Join Panel -->
+      <div class="grid grid-cols-2 gap-4 mb-6">
+       <div class="rounded-2xl p-6 text-center" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+        <p class="text-sm font-500 mb-3" style="color: #7b9fcc;">Create New Room</p><input id="roomNameInput" type="text" placeholder="Room name..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm mb-3" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <button onclick="createGameRoom()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="plus" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Create Room</button>
+       </div>
+       <div class="rounded-2xl p-6 text-center" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+        <p class="text-sm font-500 mb-3" style="color: #7b9fcc;">Join Existing Room</p><input id="joinCodeInput" type="text" placeholder="Room code..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm mb-3" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;" maxlength="6"> <button onclick="joinGameRoom()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;"><i data-lucide="log-in" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Join Room</button>
+       </div>
+      </div><!-- Active Room Display -->
+      <div id="roomStatus" class="mb-6">
+       <p class="text-center" style="color: #7b9fcc;">No active room. Create or join one to get started!</p>
+      </div><!-- Live Games List -->
+      <div class="mb-6">
+       <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">🔴 Live Games Now</h2>
+       <div id="liveGamesList" class="space-y-3 max-h-96 overflow-auto">
+        <div class="text-center py-6">
+         <p style="color: #7b9fcc;" class="text-sm">No active games right now. Create one to get started!</p>
+        </div>
+       </div>
+      </div><!-- Recent Games List -->
+      <div>
+       <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">⏱️ Recent Rooms</h2>
+       <div id="recentGamesList" class="space-y-2">
+        <p style="color: #7b9fcc;" class="text-sm text-center py-4">No recent games</p>
+       </div>
+      </div>
+     </div><!-- Right: Chat -->
+     <div class="lg:col-span-1">
+      <div class="rounded-2xl p-4 flex flex-col h-full" style="background: #1a2d4a; border: 2px solid #2a4a6e; min-height: 500px;">
+       <div class="flex items-center justify-between mb-4 pb-4 border-b" style="border-color: #2a4a6e;">
+        <h3 class="font-heading font-700" style="color: #f0e6d3;">💬 Chat</h3><span class="text-xs px-2 py-1 rounded-full" id="chatStatus" style="background: #243b5e; color: #7b9fcc;">Offline</span>
+       </div><!-- Messages area -->
+       <div id="chatMessages" class="flex-1 overflow-y-auto mb-3 space-y-2 max-h-64">
+        <div class="text-center py-4">
+         <p class="text-xs" style="color: #7b9fcc;">Join a room to start chatting! 💭</p>
+        </div>
+       </div><!-- Message input -->
+       <div class="flex gap-2 mt-auto"><input id="chatInput" type="text" placeholder="Your message..." class="spelling-input flex-1 px-3 py-2 rounded-lg text-xs" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;" onkeypress="if(event.key==='Enter') sendChatMessage()"> <button onclick="sendChatMessage()" class="p-2 rounded-lg transition-all hover:scale-110" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="send" style="width:16px;height:16px;"></i></button>
+       </div><!-- Online players -->
+       <div class="mt-4 pt-4 border-t" style="border-color: #2a4a6e;">
+        <p class="text-xs font-600 mb-2" style="color: #7b9fcc;">🟢 Online Players</p>
+        <div id="onlinePlayers" class="space-y-1 max-h-32 overflow-y-auto">
+         <p class="text-xs" style="color: #7b9fcc;">No players online</p>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </main><!-- LEADERBOARD VIEW -->
+   <main id="leaderboardView" class="px-4 pb-8 hidden">
+    <div class="max-w-2xl mx-auto">
+     <div class="flex justify-center mb-6 gap-3"><input id="playerNameInput" type="text" placeholder="Enter your name..." class="spelling-input px-4 py-2 rounded-xl text-sm font-600" style="background: #1a2d4a; color: #f0e6d3; border: 2px solid #2a4a6e; width: 200px;"> <button onclick="saveScore()" class="px-6 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="save" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Save Score</button> <button onclick="initializePlayerName()" class="px-4 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #06b6d4; color: #0f1a2e;"><i data-lucide="shuffle" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Random Name</button>
+     </div>
+     <div id="leaderboardList" class="space-y-2"></div>
+     <div id="emptyLeaderboard" class="text-center py-8">
+      <p style="color: #7b9fcc;" class="text-sm">No scores yet. Complete spelling practice to join the leaderboard!</p>
+     </div>
+    </div>
+   </main><!-- COMPETITION VIEW -->
+   <main id="competitionView" class="px-4 pb-8 hidden">
+    <div class="max-w-6xl mx-auto"><!-- Create Competition Panel -->
+     <div class="rounded-2xl p-6 mb-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">🎮 Start Competition Room</h2>
+      <div class="space-y-3"><input id="compRoomName" type="text" placeholder="Competition room name..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <input id="compMaxPlayers" type="number" placeholder="Max players (2-100)..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;" min="2" max="100" value="10"> <button onclick="startCompetition()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="plus" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Create</button>
+      </div>
+     </div><!-- Active Competitions -->
+     <div class="mb-6">
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">🔴 Active Competitions</h2>
+      <div id="activeCompetitions" class="space-y-3">
+       <div class="text-center py-6">
+        <p style="color: #7b9fcc;" class="text-sm">No active competitions. Create one to get started! 🚀</p>
+       </div>
+      </div>
+     </div><!-- Leaderboard for Current Competition -->
+     <div id="competitionLeaderboardSection" class="hidden mb-6">
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">🏆 Live Competition Leaderboard</h2>
+      <div id="competitionLeaderboard" class="space-y-2 mb-6 max-h-96 overflow-y-auto"></div>
+      <div class="text-center">
+       <button onclick="endCompetition()" class="px-6 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #f87171; color: #fff;"> <i data-lucide="x" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>End Competition </button>
+      </div>
+     </div><!-- Completed Competitions -->
+     <div>
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">✅ Completed Competitions</h2>
+      <div id="completedCompetitions" class="space-y-2">
+       <p style="color: #7b9fcc;" class="text-sm text-center py-4">No completed competitions yet</p>
+      </div>
+     </div>
+    </div>
+   </main><!-- ANNOUNCEMENTS VIEW -->
+   <main id="announcementsView" class="px-4 pb-8 hidden">
+    <div class="max-w-4xl mx-auto"><!-- Create Announcement Panel -->
+     <div class="rounded-2xl p-6 mb-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">📢 Create Announcement</h2>
+      <div class="space-y-3"><input id="announcementTitle" type="text" placeholder="Announcement title..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <textarea id="announcementContent" placeholder="Your message..." class="spelling-input w-full px-3 py-2 rounded-lg text-sm h-24" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e; resize: vertical;"></textarea> <select id="announcementType" class="spelling-input w-full px-3 py-2 rounded-lg text-sm" style="background: #0f1a2e; color: #f0e6d3; border: 2px solid #2a4a6e;"> <option value="">Select announcement type...</option> <option value="info">ℹ️ Information</option> <option value="alert">⚠️ Alert</option> <option value="success">✅ Success</option> <option value="event">🎉 Event</option> <option value="update">🔄 Update</option> </select> <button onclick="createAnnouncement()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;"><i data-lucide="send" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Post Announcement</button>
+      </div>
+     </div><!-- Announcements List -->
+     <div>
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">📋 Latest Announcements</h2>
+      <div id="announcementsList" class="space-y-3">
+       <div class="text-center py-8">
+        <p style="color: #7b9fcc;" class="text-sm">No announcements yet. Create one to get started! 📢</p>
+       </div>
+      </div>
+     </div>
+    </div>
+   </main><!-- STUDY GUIDE VIEW -->
+   <main id="studyView" class="px-4 pb-8 hidden">
+    <div class="max-w-4xl mx-auto"><!-- Study Tools Section -->
+     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8"><!-- Vocabulary Table -->
+      <div class="rounded-2xl p-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+       <h2 class="font-heading text-lg font-700 mb-4" style="color: #f0e6d3;">📚 Vocabulary List</h2>
+       <div class="space-y-2 max-h-96 overflow-y-auto">
+        <div id="vocabularyList" class="space-y-2"></div>
+       </div>
+       <div class="mt-4">
+        <button onclick="exportVocabulary()" class="w-full px-4 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #06b6d4; color: #0f1a2e;"> <i data-lucide="download" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Export as CSV </button>
+       </div>
+      </div><!-- Learning Tips -->
+      <div class="rounded-2xl p-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+       <h2 class="font-heading text-lg font-700 mb-4" style="color: #f0e6d3;">💡 Learning Tips</h2>
+       <div class="space-y-3 text-sm">
+        <div class="p-3 rounded-lg" style="background: #122a1a; border-left: 4px solid #4ade80;">
+         <p style="color: #f0e6d3; font-weight: 600;">📌 Daily Practice</p>
+         <p style="color: #7b9fcc; font-size: 12px;">Study 5-10 new words every day for best retention</p>
+        </div>
+        <div class="p-3 rounded-lg" style="background: #1a2a3a; border-left: 4px solid #06b6d4;">
+         <p style="color: #f0e6d3; font-weight: 600;">🎯 Spaced Repetition</p>
+         <p style="color: #7b9fcc; font-size: 12px;">Review words on day 1, 3, 7, and 14 for better memory</p>
+        </div>
+        <div class="p-3 rounded-lg" style="background: #2a1a2a; border-left: 4px solid #a78bfa;">
+         <p style="color: #f0e6d3; font-weight: 600;">🗣️ Speak Out Loud</p>
+         <p style="color: #7b9fcc; font-size: 12px;">Practice pronunciation to improve speaking skills</p>
+        </div>
+        <div class="p-3 rounded-lg" style="background: #2a1a1a; border-left: 4px solid #f87171;">
+         <p style="color: #f0e6d3; font-weight: 600;">✍️ Write &amp; Spell</p>
+         <p style="color: #7b9fcc; font-size: 12px;">Use spelling exercises to reinforce muscle memory</p>
+        </div>
+        <div class="p-3 rounded-lg" style="background: #1a2a1a; border-left: 4px solid #e8a44a;">
+         <p style="color: #f0e6d3; font-weight: 600;">🎮 Make it Fun</p>
+         <p style="color: #7b9fcc; font-size: 12px;">Use game room to learn with friends &amp; compete</p>
+        </div>
+       </div>
+      </div>
+     </div><!-- Study Statistics -->
+     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div class="rounded-xl p-4 text-center" style="background: linear-gradient(135deg, #1a3a2a, #0f2a1a); border: 2px solid #2a5a3a;">
+       <p class="text-3xl font-heading font-800" style="color: #4ade80;" id="totalCards">0</p>
+       <p class="text-xs font-500 mt-2" style="color: #7b9fcc;">Total Cards</p>
+      </div>
+      <div class="rounded-xl p-4 text-center" style="background: linear-gradient(135deg, #2a1a3a, #1a0a2a); border: 2px solid #4a2a6a;">
+       <p class="text-3xl font-heading font-800" style="color: #a78bfa;" id="cardsMastered">0</p>
+       <p class="text-xs font-500 mt-2" style="color: #7b9fcc;">Mastered</p>
+      </div>
+      <div class="rounded-xl p-4 text-center" style="background: linear-gradient(135deg, #2a1a1a, #1a0a0a); border: 2px solid #5a2a2a;">
+       <p class="text-3xl font-heading font-800" style="color: #f87171;" id="cardsLearning">0</p>
+       <p class="text-xs font-500 mt-2" style="color: #7b9fcc;">Learning</p>
+      </div>
+      <div class="rounded-xl p-4 text-center" style="background: linear-gradient(135deg, #1a2a3a, #0a1a2a); border: 2px solid #2a4a6a;">
+       <p class="text-3xl font-heading font-800" style="color: #06b6d4;" id="studyStreak">0</p>
+       <p class="text-xs font-500 mt-2" style="color: #7b9fcc;">Study Streak 🔥</p>
+      </div>
+     </div><!-- Study Categories -->
+     <div class="rounded-2xl p-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+      <h2 class="font-heading text-xl font-700 mb-4" style="color: #f0e6d3;">📖 Study by Category</h2>
+      <div id="studyCategories" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+     </div>
+    </div>
+   </main>
+   <script>
+    // Authentic Kadazandusun vocabulary dictionary - ONLY VERIFIED WORDS
+    let vocabulary = [
+      { kadazandusun: "Bunga", english: "Flower", malay: "Bunga", emoji: "🌺", category: "Nature", example: "Bunga na maganda.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Pohon", english: "Tree", malay: "Pokok", emoji: "🌳", category: "Nature", example: "Pohon na tinggi.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Daon", english: "Leaf", malay: "Daun", emoji: "🍃", category: "Nature", example: "Daon na luntian.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Langit", english: "Sky", malay: "Langit", emoji: "☀️", category: "Nature", example: "Langit na asul.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Tanoh", english: "Earth", malay: "Tanah", emoji: "🌍", category: "Nature", example: "Tanoh na mulo.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Tubig", english: "Water", malay: "Air", emoji: "💧", category: "Nature", example: "Tubig na malinaw.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Api", english: "Fire", malay: "Api", emoji: "🔥", category: "Nature", example: "Api na mainit.", difficulty: 2, image_url: "" },
+      { kadazandusun: "Angin", english: "Wind", malay: "Angin", emoji: "💨", category: "Nature", example: "Angin na malamig.", difficulty: 2, image_url: "" },
+      { kadazandusun: "Ulan", english: "Rain", malay: "Hujan", emoji: "🌧️", category: "Nature", example: "Ulan na tumabu.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Araw", english: "Sun", malay: "Matahari", emoji: "☀️", category: "Nature", example: "Araw na mamainit.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Buwan", english: "Moon", malay: "Bulan", emoji: "🌙", category: "Nature", example: "Buwan sa gabi.", difficulty: 1, image_url: "" },
+      { kadazandusun: "Batu", english: "Stone", malay: "Batu", emoji: "🪨", category: "Nature", example: "Batu na malaki.", difficulty: 1, image_url: "" }
+    ];
+
+    const categories = ["All", ...new Set(vocabulary.map(v => v.category))];
+    let currentCategory = "All";
+    let currentDifficulty = "All";
+    let filteredCards = [...vocabulary];
+    let cardIndex = 0;
+    let isFlipped = false;
+
+    let spellIndex = 0;
+    let spellCards = [...vocabulary];
+    let correct = 0, wrong = 0, streak = 0;
+    let multiplier = 1;
+    let currentTab = "flashcard";
+    let timeLeft = 30;
+    let timerInterval = null;
+
+    let leaderboardData = [];
+    let customCards = [];
+    let announcementsData = [];
+    let gameRooms = {};
+    let visitorCount = 0;
+    let currentVisitorId = null;
+    let competitions = [];
+    let competitionIdCounter = 0;
+    let currentCompetitionId = null;
+    let competitionScores = {};
+    let isAdminUnlocked = false;
+    const ADMIN_PASSWORD = "intobar@2026BKD";
+
+    const defaultConfig = {
+      main_title: "INTOBAR",
+      subtitle_text: "Learn Kadazandusun vocabulary through flashcards & spelling",
+      study_title: "Study Guide",
+      background_color: "#f3e8ff",
+      surface_color: "#ede9fe",
+      text_color: "#1a1a1a",
+      accent_color: "#a855f7",
+      secondary_color: "#9333ea",
+      font_family: "Bricolage Grotesque",
+      font_size: 16
+    };
+
+    const dataHandler = {
+      onDataChanged(data) {
+        const leaderboard = data.filter(d => d.leaderboard_id);
+        const cards = data.filter(d => d.kadazandusun && !d.leaderboard_id);
+        const visitors = data.filter(d => d.visitor_id);
+        const announcements = data.filter(d => d.announcement_id && d.announcement_title);
+        const competitionRecords = data.filter(d => d.competition_id && d.competition_name);
+        
+        leaderboardData = leaderboard.sort((a, b) => b.score - a.score);
+        customCards = cards;
+        announcementsData = announcements;
+        competitions = competitionRecords;
+        
+        // Merge custom cards into vocabulary for flashcards
+        vocabulary = [...vocabulary.slice(0, 2), ...customCards];
+        filteredCards = vocabulary.filter(v => {
+          const catMatch = currentCategory === "All" || v.category === currentCategory;
+          const diffMatch = currentDifficulty === "All" || v.difficulty === currentDifficulty;
+          return catMatch && diffMatch;
+        });
+        spellCards = [...filteredCards];
+        pronCards = [...filteredCards];
+        
+        // Update all related views
+        updateFlashcard();
+        updateSpelling();
+        updatePronunciation();
+        updateStudyStats();
+        renderVocabularyList();
+        renderStudyCategories();
+        renderDifficulty();
+        renderCategories();
+        
+        const today = new Date().toDateString();
+        const todayVisitors = new Set(
+          visitors
+            .filter(v => v.visited_at && new Date(v.visited_at).toDateString() === today)
+            .map(v => v.visitor_id)
+        );
+        visitorCount = todayVisitors.size;
+        document.getElementById('visitorCount').textContent = visitorCount;
+        
+        renderLeaderboard();
+        renderCustomCards();
+        renderAnnouncements();
+        renderCompetitions();
+      }
+    };
+
+
+
+    function generatePlayerName() {
+      const adjectives = ["Swift", "Bright", "Smart", "Quick", "Clever", "Keen", "Sharp", "Wise", "Bold", "Happy"];
+      const nouns = ["Eagle", "Tiger", "Phoenix", "Dragon", "Falcon", "Panda", "Leopard", "Hawk", "Wolf", "Lion"];
+      const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const noun = nouns[Math.floor(Math.random() * nouns.length)];
+      const num = Math.floor(Math.random() * 900) + 100;
+      return `${adj}${noun}${num}`;
+    }
+
+    function initializePlayerName() {
+      const input = document.getElementById('playerNameInput');
+      if (!input.value || input.value.trim() === '') {
+        input.value = generatePlayerName();
+      }
+    }
+
+    async function saveScore() {
+      const playerName = document.getElementById('playerNameInput').value.trim();
+      if (!playerName) {
+        showToast("Please enter your name!", "#f87171");
+        return;
+      }
+
+      const score = correct + (correct + wrong > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0);
+      const result = await window.dataSdk.create({
+        player_name: playerName,
+        correct_answers: correct,
+        wrong_answers: wrong,
+        streak: streak,
+        score: score,
+        completed_at: new Date().toISOString(),
+        room_code: "",
+        room_join: "",
+        kadazandusun: "",
+        english: "",
+        emoji: "",
+        category: "",
+        example: "",
+        image_url: "",
+        pronunciation: "",
+        visitor_id: "",
+        visited_at: "",
+        leaderboard_id: "lb_" + Date.now(),
+        competition_id: "",
+        competition_name: "",
+        competition_host: "",
+        competition_players: 0,
+        competition_max_players: 0,
+        competition_status: "",
+        competition_created_at: "",
+        announcement_title: "",
+        announcement_content: "",
+        announcement_type: "",
+        announcement_created_at: "",
+        announcement_id: ""
+      });
+
+      if (result.isOk) {
+        showToast(`Score saved! 🎉`, "#4ade80");
+        document.getElementById('playerNameInput').value = generatePlayerName();
+      } else {
+        showToast("Failed to save score", "#f87171");
+      }
+    }
+
+    async function addCustomCard() {
+      // Get all values
+      const kd = document.getElementById('newCardKadazandusun').value.trim();
+      const en = document.getElementById('newCardEnglish').value.trim();
+      const ml = document.getElementById('newCardMalay').value.trim();
+      const em = document.getElementById('newCardEmoji').value.trim();
+      const imgUrl = document.getElementById('newCardImageUrl').value.trim();
+      const imgFile = document.getElementById('newCardImageFile').files[0];
+      let finalImageUrl = imgUrl;
+
+      // Handle file upload
+      if (imgFile) {
+        finalImageUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(imgFile);
+        });
+      }
+      const cat = document.getElementById('newCardCategory').value;
+      const diff = document.getElementById('newCardDifficulty').value;
+      const ex = document.getElementById('newCardExample').value.trim();
+      const exMalay = document.getElementById('newCardExampleMalay').value.trim();
+      const pron = document.getElementById('newCardPronunciation').value.trim();
+
+      // Validate each field with specific errors
+      if (!kd) { showToast("Kadazandusun word required", "#f87171"); return; }
+      if (!en) { showToast("English translation required", "#f87171"); return; }
+      if (!ml) { showToast("Malay translation required", "#f87171"); return; }
+      if (!em && !imgUrl && !imgFile) { showToast("Add emoji, image URL, or upload image", "#f87171"); return; }
+      if (!cat) { showToast("Select a category", "#f87171"); return; }
+      if (!diff) { showToast("Select difficulty level", "#f87171"); return; }
+      if (!ex) { showToast("Example sentence required", "#f87171"); return; }
+
+      // Show loading
+      const addBtn = document.querySelector('button[onclick="addCustomCard()"]');
+      const originalText = addBtn.innerHTML;
+      addBtn.disabled = true;
+      addBtn.innerHTML = '<i data-lucide="loader"></i> Adding...';
+      lucide.createIcons();
+
+      try {
+        // Create card data with ONLY fields that have values
+        const cardData = {
+          kadazandusun: kd,
+          english: en,
+          malay: ml,
+          category: cat,
+          difficulty: parseInt(diff),
+          example: ex
+        };
+
+        // Add optional fields only if they have values
+        if (em) cardData.emoji = em;
+        if (exMalay) cardData.example_malay = exMalay;
+        if (finalImageUrl) cardData.image_url = finalImageUrl;
+        if (pron) cardData.pronunciation = pron;
+
+        console.log("Sending card data:", cardData);
+        const result = await window.dataSdk.create(cardData);
+
+        // Reset button immediately
+        addBtn.disabled = false;
+        addBtn.innerHTML = originalText;
+        lucide.createIcons();
+
+        if (result.isOk) {
+          showToast(`"${kd}" added to your cards! 🎉`, "#4ade80");
+          // Clear form
+          document.getElementById('newCardKadazandusun').value = '';
+          document.getElementById('newCardEnglish').value = '';
+          document.getElementById('newCardMalay').value = '';
+          document.getElementById('newCardEmoji').value = '';
+          document.getElementById('newCardImageUrl').value = '';
+          document.getElementById('newCardImageFile').value = '';
+          clearImageUpload();
+          document.getElementById('newCardCategory').value = '';
+          document.getElementById('newCardDifficulty').value = '';
+          document.getElementById('newCardExample').value = '';
+          document.getElementById('newCardExampleMalay').value = '';
+          document.getElementById('newCardPronunciation').value = '';
+          clearImageUpload();
+          renderCustomCards();
+        } else {
+          const errorMsg = result.error?.message || "Unknown error";
+          console.error("SDK Error Details:", {
+            isError: result.isError,
+            error: result.error,
+            message: errorMsg
+          });
+          showToast("Failed to add card: " + errorMsg, "#f87171");
+        }
+      } catch (err) {
+        addBtn.disabled = false;
+        addBtn.innerHTML = originalText;
+        lucide.createIcons();
+        console.error("Exception caught:", {
+          name: err.name,
+          message: err.message,
+          stack: err.stack
+        });
+        showToast("Error: " + err.message, "#f87171");
+      }
+    }
+
+    function renderCustomCards() {
+      const container = document.getElementById('customCardsList');
+      const empty = document.getElementById('emptyCustomCards');
+
+      if (customCards.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+
+      empty.classList.add('hidden');
+      container.innerHTML = customCards.map((card, idx) => {
+        const diffLabel = card.difficulty === 1 ? '🟢 Mudah' : card.difficulty === 2 ? '🟡 Sederhana' : '🔴 Mencabar';
+        return `
+        <div class="flex items-center justify-between p-4 rounded-xl" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+          <div class="flex items-center gap-3 flex-1">
+            ${card.image_url ? `<img src="${card.image_url}" alt="Card image" loading="lazy" onerror="this.style.display='none';" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">` : ''}
+            <span class="text-2xl">${card.emoji}</span>
+            <div>
+              <p class="font-heading font-700" style="color: #f0e6d3;">${card.kadazandusun}</p>
+              <p class="text-xs" style="color: #7b9fcc;">${card.english} • ${card.malay} • ${card.category} • ${diffLabel}</p>
+              <p class="text-xs italic" style="color: #06b6d4;">KD: "${card.example}"</p>
+              ${card.example_malay ? `<p class="text-xs italic" style="color: #e8a44a;">"${card.example_malay}"</p>` : ''}
+              ${card.pronunciation ? `<p class="text-xs italic" style="color: #a78bfa;">📢 ${card.pronunciation}</p>` : ''}
+            </div>
+          </div>
+          <button onclick="deleteCustomCard('${card.__backendId}')" class="p-2 rounded-lg transition-all hover:scale-110" style="background: #2a1218; color: #f87171;">
+            <i data-lucide="trash-2" style="width:18px;height:18px;"></i>
+          </button>
+        </div>
+      `}).join('');
+      lucide.createIcons();
+    }
+
+    async function deleteCustomCard(backendId) {
+      const cardToDelete = customCards.find(c => c.__backendId === backendId);
+      if (!cardToDelete) return;
+
+      const result = await window.dataSdk.delete(cardToDelete);
+      if (result.isOk) {
+        showToast("Card deleted!", "#4ade80");
+        const idx = vocabulary.findIndex(v => v.kadazandusun === cardToDelete.kadazandusun);
+        if (idx > -1) vocabulary.splice(idx, 1);
+      } else {
+        showToast("Failed to delete card", "#f87171");
+      }
+    }
+
+    function renderLeaderboard() {
+      const container = document.getElementById('leaderboardList');
+      const empty = document.getElementById('emptyLeaderboard');
+
+      if (leaderboardData.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+
+      empty.classList.add('hidden');
+      const topPlayers = leaderboardData.slice(0, 30);
+      container.innerHTML = topPlayers.map((entry, idx) => {
+        const position = idx + 1;
+        let medal = '';
+        let medalBg = '';
+        if (position === 1) {
+          medal = '🥇';
+          medalBg = 'linear-gradient(135deg, #ffd700, #ffed4e)';
+        } else if (position === 2) {
+          medal = '🥈';
+          medalBg = 'linear-gradient(135deg, #c0c0c0, #e8e8e8)';
+        } else if (position === 3) {
+          medal = '🥉';
+          medalBg = 'linear-gradient(135deg, #cd7f32, #e8b88d)';
+        } else if (position <= 10) {
+          medal = '⭐';
+          medalBg = '#1a3a2a';
+        } else if (position <= 20) {
+          medal = '✨';
+          medalBg = '#1a2a3a';
+        } else {
+          medal = '🎯';
+          medalBg = '#2a1a3a';
+        }
+        
+        const accuracy = entry.correct_answers + entry.wrong_answers > 0
+          ? Math.round((entry.correct_answers / (entry.correct_answers + entry.wrong_answers)) * 100)
+          : 0;
+        
+        return `
+          <div class="flex items-center gap-4 p-4 rounded-xl anim-slide-up" style="background: ${position <= 3 ? 'linear-gradient(135deg, #1a2d4a, #243b5e)' : '#0f1a2e'}; border: 2px solid ${position <= 3 ? '#e8a44a' : '#2a4a6e'};">
+            <div class="flex items-center justify-center w-16 rounded-lg text-2xl font-heading font-800" style="background: ${medalBg}; min-width: 64px;">
+              ${medal} <span style="color: ${position <= 3 ? '#1a1a1a' : '#f0e6d3'}; margin-left: 4px;">#${position}</span>
+            </div>
+            <div class="flex-1">
+              <p class="font-heading font-700" style="color: #f0e6d3; font-size: ${position <= 3 ? '16px' : '14px'}">${entry.player_name}</p>
+              <p class="text-xs mt-1" style="color: #7b9fcc;">
+                <span style="background: #122a1a; color: #4ade80; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-right: 6px;">✅ ${entry.correct_answers}</span>
+                <span style="background: #2a1218; color: #f87171; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-right: 6px;">❌ ${entry.wrong_answers}</span>
+                <span style="background: #1a2a3a; color: #4ade80; padding: 2px 6px; border-radius: 4px; display: inline-block;">🔥 ${entry.streak}</span>
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="font-heading text-2xl font-800" style="color: #e8a44a;">${entry.score}</p>
+              <p class="text-xs mt-1" style="color: #7b9fcc;">${accuracy}%</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Competition Functions
+    async function startCompetition() {
+      const name = document.getElementById('compRoomName').value.trim();
+      const maxPlayers = parseInt(document.getElementById('compMaxPlayers').value) || 10;
+      if (!name || maxPlayers < 2 || maxPlayers > 100) {
+        showToast("Please fill in all fields correctly! Max 100 players.", "#f87171");
+        return;
+      }
+      competitionIdCounter++;
+      const compId = 'competition_' + competitionIdCounter;
+      const hostName = `Host${Math.floor(Math.random() * 9000) + 1000}`;
+      
+      // Show loading state
+      const createBtn = event.target;
+      const originalText = createBtn.innerHTML;
+      createBtn.disabled = true;
+      createBtn.innerHTML = '<i data-lucide="loader" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Creating...';
+      
+      try {
+        const result = await window.dataSdk.create({
+          player_name: hostName,
+          correct_answers: 0,
+          wrong_answers: 0,
+          streak: 0,
+          score: 0,
+          completed_at: new Date().toISOString(),
+          room_code: compId,
+          room_join: "",
+          kadazandusun: "",
+          english: "",
+          emoji: "",
+          category: "",
+          example: "",
+          image_url: "",
+          pronunciation: "",
+          visitor_id: "",
+          visited_at: new Date().toISOString(),
+          leaderboard_id: "",
+          competition_id: compId,
+          competition_name: name,
+          competition_host: hostName,
+          competition_players: 1,
+          competition_max_players: maxPlayers,
+          competition_status: "active",
+          competition_created_at: new Date().toISOString(),
+          announcement_title: "",
+          announcement_content: "",
+          announcement_type: "",
+          announcement_created_at: "",
+          announcement_id: ""
+        });
+        
+        if (result.isOk) {
+          document.getElementById('compRoomName').value = '';
+          document.getElementById('compMaxPlayers').value = '10';
+          showToast(`Competition "${name}" created! 🎮`, "#4ade80");
+          renderCompetitions();
+        } else {
+          const errorMsg = result.error?.message || "Unknown error";
+          showToast(`Failed: ${errorMsg}`, "#f87171");
+        }
+      } catch (err) {
+        showToast(`Error: ${err.message}`, "#f87171");
+      } finally {
+        // Restore button
+        createBtn.disabled = false;
+        createBtn.innerHTML = originalText;
+        lucide.createIcons();
+      }
+    }
+
+    function joinCompetition(compId) {
+      currentCompetitionId = compId;
+      spellCards = [...filteredCards];
+      spellIndex = 0;
+      correct = 0;
+      wrong = 0;
+      streak = 0;
+      multiplier = 1;
+      updateSpelling();
+      switchTab('spelling');
+      showToast(`You've joined the competition! 🎮`, "#4ade80");
+    }
+
+    function leaveCompetition() {
+      if (confirm("Are you sure you want to leave this competition? Your score won't be saved.")) {
+        currentCompetitionId = null;
+        correct = 0;
+        wrong = 0;
+        streak = 0;
+        multiplier = 1;
+        switchTab('competition');
+        showToast("You've left the competition", "#7b9fcc");
+      }
+    }
+
+    async function endCompetition() {
+      if (!currentCompetitionId || correct + wrong === 0) {
+        switchTab('competition');
+        return;
+      }
+      const score = correct + Math.round((correct / (correct + wrong)) * 100);
+      const result = await window.dataSdk.create({
+        player_name: `Player${Math.floor(Math.random() * 9000) + 1000}`,
+        correct_answers: correct, wrong_answers: wrong, streak: streak, score: score,
+        completed_at: new Date().toISOString(), room_code: currentCompetitionId,
+        kadazandusun: "", english: "", emoji: "", category: "", example: "", image_url: "",
+        pronunciation: "", visitor_id: "", visited_at: "",
+        competition_id: "", competition_name: "", competition_host: "", competition_players: 0,
+        competition_max_players: 0, competition_status: "", competition_created_at: "",
+        announcement_title: "", announcement_content: "", announcement_type: "", announcement_created_at: "",
+        announcement_id: ""
+      });
+      if (result.isOk) {
+        showToast("Score saved! 🎉", "#4ade80");
+      }
+      currentCompetitionId = null;
+      switchTab('competition');
+      renderCompetitions();
+    }
+
+    function renderCompetitions() {
+      // Get all unique competitions
+      const seenIds = new Set();
+      const uniqueComps = [];
+      
+      for (const comp of competitions) {
+        if (!seenIds.has(comp.competition_id)) {
+          uniqueComps.push(comp);
+          seenIds.add(comp.competition_id);
+        }
+      }
+      
+      const activeComps = uniqueComps.filter(c => c.competition_status === 'active');
+      const completedComps = uniqueComps.filter(c => c.competition_status === 'completed');
+      
+      const activeContainer = document.getElementById('activeCompetitions');
+      
+      if (activeComps.length === 0) {
+        activeContainer.innerHTML = `<div class="text-center py-6"><p style="color: #7b9fcc;" class="text-sm">No active competitions. Create one to get started! 🚀</p></div>`;
+      } else {
+        activeContainer.innerHTML = activeComps.map(comp => `
+          <div class="p-4 rounded-xl anim-pop" style="background: linear-gradient(135deg, #1a2d4a, #243b5e); border: 2px solid #4ade80;">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex-1">
+                <p class="font-heading font-700 mb-1" style="color: #f0e6d3;">🎮 ${comp.competition_name}</p>
+                <p class="text-xs" style="color: #7b9fcc;">Host: ${comp.competition_host}</p>
+              </div>
+              <span style="background: #f87171; color: #fff; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 700;">🔴 LIVE</span>
+            </div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs" style="color: #7b9fcc;">⏱️ Active Now</span>
+              <span style="color: #4ade80; font-weight: 700; font-size: 12px;">👥 ${comp.competition_players}/${comp.competition_max_players}</span>
+            </div>
+            <button onclick="joinCompetition('${comp.competition_id}')" class="w-full px-3 py-2 rounded-lg text-xs font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;">
+              <i data-lucide="play" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i>Join & Compete
+            </button>
+          </div>
+        `).join('');
+      }
+      
+      const completedContainer = document.getElementById('completedCompetitions');
+      if (completedComps.length === 0) {
+        completedContainer.innerHTML = `<p style="color: #7b9fcc;" class="text-sm text-center py-4">No completed competitions yet</p>`;
+      } else {
+        completedContainer.innerHTML = completedComps.map(comp => `
+          <div class="p-3 rounded-lg" style="background: #1a2d4a; border: 1px solid #2a4a6e;">
+            <div class="flex items-center justify-between">
+              <p class="font-600 text-sm" style="color: #f0e6d3;">🏆 ${comp.competition_name}</p>
+              <p class="text-xs font-700" style="color: #4ade80;">👥 ${comp.competition_players} played</p>
+            </div>
+          </div>
+        `).join('');
+      }
+      lucide.createIcons();
+    }
+
+    // Announcements
+    let announcementIdCounter = 0;
+
+    async function createAnnouncement() {
+      const title = document.getElementById('announcementTitle').value.trim();
+      const content = document.getElementById('announcementContent').value.trim();
+      const type = document.getElementById('announcementType').value;
+
+      if (!title || !content || !type) {
+        showToast("Please fill in all fields!", "#f87171");
+        return;
+      }
+
+      announcementIdCounter++;
+      const result = await window.dataSdk.create({
+        player_name: "",
+        correct_answers: 0,
+        wrong_answers: 0,
+        streak: 0,
+        score: 0,
+        completed_at: "",
+        room_code: "",
+        room_join: "",
+        kadazandusun: "",
+        english: "",
+        emoji: "",
+        category: "",
+        example: "",
+        image_url: "",
+        pronunciation: "",
+        visitor_id: "",
+        visited_at: "",
+        leaderboard_id: "",
+        competition_id: "",
+        competition_name: "",
+        competition_host: "",
+        competition_players: 0,
+        competition_max_players: 0,
+        competition_status: "",
+        competition_created_at: "",
+        announcement_title: title,
+        announcement_content: content,
+        announcement_type: type,
+        announcement_created_at: new Date().toISOString(),
+        announcement_id: 'announcement_' + announcementIdCounter
+      });
+
+      if (result.isOk) {
+        showToast("Announcement posted! 📢", "#4ade80");
+        document.getElementById('announcementTitle').value = '';
+        document.getElementById('announcementContent').value = '';
+        document.getElementById('announcementType').value = '';
+      } else {
+        showToast("Failed to post announcement", "#f87171");
+      }
+    }
+
+    function renderAnnouncements() {
+      const sortedAnnouncements = announcementsData.sort((a, b) => 
+        new Date(b.announcement_created_at) - new Date(a.announcement_created_at)
+      );
+
+      const container = document.getElementById('announcementsList');
+      
+      if (!sortedAnnouncements || sortedAnnouncements.length === 0) {
+        container.innerHTML = `<div class="text-center py-8"><p style="color: #7b9fcc;" class="text-sm">No announcements yet. Create one to get started! 📢</p></div>`;
+        return;
+      }
+
+      container.innerHTML = sortedAnnouncements.map(ann => {
+        const typeEmojis = {
+          'info': 'ℹ️',
+          'alert': '⚠️',
+          'success': '✅',
+          'event': '🎉',
+          'update': '🔄'
+        };
+        const typeColors = {
+          'info': '#06b6d4',
+          'alert': '#f59e0b',
+          'success': '#4ade80',
+          'event': '#a78bfa',
+          'update': '#60a5fa'
+        };
+        const emoji = typeEmojis[ann.announcement_type] || '📢';
+        const bgColor = typeColors[ann.announcement_type] || '#06b6d4';
+        const createdDate = new Date(ann.announcement_created_at);
+        const timeStr = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        
+        return `
+          <div class="p-5 rounded-xl anim-slide-up" style="background: linear-gradient(135deg, #0f1a2e, #1a2d4a); border-left: 4px solid ${bgColor};">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-start gap-3 flex-1">
+                <span class="text-2xl">${emoji}</span>
+                <div class="flex-1">
+                  <p class="font-heading font-700 text-lg" style="color: #f0e6d3;">${ann.announcement_title}</p>
+                  <p class="text-xs" style="color: #7b9fcc;">${timeStr}</p>
+                </div>
+              </div>
+              <button onclick="deleteAnnouncement('${ann.__backendId}')" class="p-2 rounded-lg transition-all hover:scale-110" style="background: #2a1218; color: #f87171;">
+                <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
+              </button>
+            </div>
+            <p class="text-sm leading-relaxed" style="color: #7b9fcc; white-space: pre-wrap;">${ann.announcement_content}</p>
+          </div>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    async function deleteAnnouncement(backendId) {
+      const annToDelete = announcementsData.find(d => d.__backendId === backendId);
+      if (!annToDelete) return;
+
+      const result = await window.dataSdk.delete(annToDelete);
+      if (result.isOk) {
+        showToast("Announcement deleted!", "#4ade80");
+      } else {
+        showToast("Failed to delete announcement", "#f87171");
+      }
+    }
+
+    // Study Functions
+    function renderVocabularyList() {
+      const container = document.getElementById('vocabularyList');
+      container.innerHTML = filteredCards.map((card, idx) => `
+        <div class="p-3 rounded-lg flex items-center justify-between" style="background: #0f1a2e; border: 1px solid #2a4a6e;">
+          <div class="flex items-center gap-3 flex-1">
+            <span class="text-2xl">${card.emoji}</span>
+            <div class="flex-1">
+              <p class="font-heading font-700 text-sm" style="color: #f0e6d3;">${card.kadazandusun}</p>
+              <p class="text-xs" style="color: #7b9fcc;">${card.english} • ${card.malay}</p>
+            </div>
+          </div>
+          <span class="text-xs font-600 px-2 py-1 rounded" style="background: ${card.difficulty === 1 ? '#122a1a; color: #4ade80;' : card.difficulty === 2 ? '#1a2a1a; color: #e8a44a;' : '#2a1218; color: #f87171;'}">${card.difficulty === 1 ? 'Easy' : card.difficulty === 2 ? 'Medium' : 'Hard'}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderStudyCategories() {
+      const container = document.getElementById('studyCategories');
+      const catStats = {};
+      
+      categories.forEach(cat => {
+        if (cat !== 'All') {
+          const cardsInCat = vocabulary.filter(v => v.category === cat);
+          catStats[cat] = {
+            total: cardsInCat.length,
+            emoji: cardsInCat[0]?.emoji || '📚'
+          };
+        }
+      });
+
+      container.innerHTML = Object.entries(catStats).map(([cat, stats]) => `
+        <div onclick="filterCategory('${cat}'); switchTab('flashcard');" class="p-4 rounded-xl cursor-pointer transition-all hover:scale-105" style="background: linear-gradient(135deg, #1a2d4a, #243b5e); border: 2px solid #2a4a6e;">
+          <div class="text-3xl mb-2">${stats.emoji}</div>
+          <p class="font-heading font-700 text-sm" style="color: #f0e6d3;">${cat}</p>
+          <p class="text-xs mt-1" style="color: #7b9fcc;">${stats.total} words</p>
+          <button class="mt-3 w-full px-3 py-1.5 rounded-lg text-xs font-600 transition-all hover:scale-105" style="background: #e8a44a; color: #0f1a2e;">
+            <i data-lucide="play" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i>Study Now
+          </button>
+        </div>
+      `).join('');
+      lucide.createIcons();
+    }
+
+    function updateStudyStats() {
+      document.getElementById('totalCards').textContent = filteredCards.length;
+      document.getElementById('cardsMastered').textContent = Math.floor(correct * 0.3);
+      document.getElementById('cardsLearning').textContent = filteredCards.length - Math.floor(correct * 0.3);
+      document.getElementById('studyStreak').textContent = streak;
+    }
+
+    function exportVocabulary() {
+      let csv = 'Kadazandusun,English,Category,Difficulty,Example\n';
+      filteredCards.forEach(card => {
+        const difficulty = card.difficulty === 1 ? 'Easy' : card.difficulty === 2 ? 'Medium' : 'Hard';
+        csv += `"${card.kadazandusun}","${card.english}","${card.category}","${difficulty}","${card.example}"\n`;
+      });
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'kadazandusun-vocabulary.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showToast('Vocabulary exported! 📥', '#4ade80');
+    }
+
+    function renderCategories() {
+      const container = document.getElementById('categoryFilter');
+      container.innerHTML = '';
+      categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.textContent = cat;
+        btn.className = 'px-4 py-1.5 rounded-full text-xs font-600 transition-all hover:scale-105';
+        const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
+        if (cat === currentCategory) {
+          btn.style.background = cfg.accent_color || defaultConfig.accent_color;
+          btn.style.color = cfg.background_color || defaultConfig.background_color;
+        } else {
+          btn.style.background = cfg.surface_color || defaultConfig.surface_color;
+          btn.style.color = cfg.secondary_color || defaultConfig.secondary_color;
+        }
+        btn.onclick = () => filterCategory(cat);
+        container.appendChild(btn);
+      });
+    }
+
+    function renderDifficulty() {
+      const container = document.getElementById('difficultyFilter');
+      container.innerHTML = '';
+      const difficulties = [
+        { label: 'All Levels', value: 'All' },
+        { label: '🟢 Mudah (Easy)', value: 1 },
+        { label: '🟡 Sederhana (Medium)', value: 2 },
+        { label: '🔴 Mencabar (Hard)', value: 3 }
+      ];
+      difficulties.forEach(diff => {
+        const btn = document.createElement('button');
+        btn.textContent = diff.label;
+        btn.className = 'px-4 py-1.5 rounded-full text-xs font-600 transition-all hover:scale-105';
+        const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
+        if (diff.value === currentDifficulty) {
+          btn.style.background = cfg.accent_color || defaultConfig.accent_color;
+          btn.style.color = cfg.background_color || defaultConfig.background_color;
+        } else {
+          btn.style.background = cfg.surface_color || defaultConfig.surface_color;
+          btn.style.color = cfg.secondary_color || defaultConfig.secondary_color;
+        }
+        btn.onclick = () => filterDifficulty(diff.value);
+        container.appendChild(btn);
+      });
+    }
+
+    function filterDifficulty(difficulty) {
+      currentDifficulty = difficulty;
+      updateFilteredCards();
+      renderDifficulty();
+    }
+
+    function filterCategory(cat) {
+      currentCategory = cat;
+      updateFilteredCards();
+      renderCategories();
+    }
+
+    function updateFilteredCards() {
+      // Use only custom cards for filtering
+      const cardsToFilter = customCards.length > 0 ? customCards : vocabulary;
+      filteredCards = cardsToFilter.filter(v => {
+        const catMatch = currentCategory === "All" || v.category === currentCategory;
+        const diffMatch = currentDifficulty === "All" || v.difficulty === currentDifficulty;
+        return catMatch && diffMatch;
+      });
+      cardIndex = 0;
+      isFlipped = false;
+      spellCards = [...filteredCards];
+      spellIndex = 0;
+      updateFlashcard();
+      updateSpelling();
+      updateStudyStats();
+      renderVocabularyList();
+    }
+
+    function updateFlashcard() {
+      if (filteredCards.length === 0) return;
+      const card = filteredCards[cardIndex];
+      const inner = document.getElementById('cardInner');
+      inner.classList.remove('flipped');
+      isFlipped = false;
+
+      document.getElementById('cardImage').src = card.image_url || '';
+      document.getElementById('cardImage').style.display = card.image_url ? 'block' : 'none';
+      document.getElementById('cardImageBack').src = card.image_url || '';
+      document.getElementById('cardImageBack').style.display = card.image_url ? 'block' : 'none';
+      document.getElementById('cardEmoji').textContent = card.emoji;
+      document.getElementById('cardWord').textContent = card.kadazandusun;
+      document.getElementById('cardCategory').textContent = 'Tap to reveal';
+      document.getElementById('cardEmojiBack').textContent = card.emoji;
+      document.getElementById('cardTranslation').textContent = card.english;
+      document.getElementById('cardWordBack').textContent = card.kadazandusun;
+      document.getElementById('cardMalay').textContent = card.malay;
+      document.getElementById('cardExample').textContent = `"${card.example}"`;
+      document.getElementById('cardCounter').textContent = `${cardIndex + 1} / ${filteredCards.length}`;
+      renderProgressDots();
+    }
+
+    function renderProgressDots() {
+      const container = document.getElementById('progressDots');
+      container.innerHTML = '';
+      const total = filteredCards.length;
+      const maxDots = Math.min(total, 15);
+      const step = total <= maxDots ? 1 : Math.ceil(total / maxDots);
+      for (let i = 0; i < total; i += step) {
+        const dot = document.createElement('span');
+        dot.className = 'progress-dot inline-block';
+        const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
+        dot.style.background = i === cardIndex || (i < cardIndex + step && i + step > cardIndex)
+          ? (cfg.accent_color || defaultConfig.accent_color)
+          : (cfg.surface_color || defaultConfig.surface_color);
+        container.appendChild(dot);
+      }
+    }
+
+    function flipCard() {
+      isFlipped = !isFlipped;
+      document.getElementById('cardInner').classList.toggle('flipped', isFlipped);
+    }
+
+    function nextCard() {
+      cardIndex = (cardIndex + 1) % filteredCards.length;
+      updateFlashcard();
+    }
+
+    function prevCard() {
+      cardIndex = (cardIndex - 1 + filteredCards.length) % filteredCards.length;
+      updateFlashcard();
+    }
+
+    function shuffleCards() {
+      for (let i = filteredCards.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [filteredCards[i], filteredCards[j]] = [filteredCards[j], filteredCards[i]];
+      }
+      cardIndex = 0;
+      updateFlashcard();
+      spellCards = [...filteredCards];
+      spellIndex = 0;
+      updateSpelling();
+    }
+
+    function updateSpelling() {
+      if (spellCards.length === 0) return;
+      const card = spellCards[spellIndex];
+      document.getElementById('spellImage').src = card.image_url || '';
+      document.getElementById('spellImage').style.display = card.image_url ? 'block' : 'none';
+      document.getElementById('spellEmoji').textContent = card.emoji;
+      document.getElementById('spellEnglish').textContent = `${card.english} (${card.malay})`;
+      document.getElementById('spellHint').textContent = '';
+      document.getElementById('spellInput').value = '';
+      document.getElementById('spellInput').style.borderColor = '#2a4a6e';
+      const fb = document.getElementById('spellFeedback');
+      fb.classList.add('hidden');
+      document.getElementById('spellInput').focus();
+      timeLeft = 30;
+      document.getElementById('timerDisplay').textContent = '30s';
+      
+      // Show/hide leave button based on whether in competition
+      const leaveBtn = document.getElementById('competitionLeaveBtn');
+      if (currentCompetitionId) {
+        leaveBtn.innerHTML = `<button onclick="leaveCompetition()" class="px-4 py-2 rounded-xl text-sm font-600 transition-all hover:scale-105" style="background: #f87171; color: #fff;"><i data-lucide="log-out" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Leave Competition</button>`;
+        lucide.createIcons();
+      } else {
+        leaveBtn.innerHTML = '';
+      }
+      
+      startTimer();
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timerDisplay').textContent = timeLeft + 's';
+        const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
+        if (timeLeft <= 10) {
+          document.getElementById('timerDisplay').style.color = '#f87171';
+        } else {
+          document.getElementById('timerDisplay').style.color = cfg.accent_color || defaultConfig.accent_color;
+        }
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          skipSpelling();
+        }
+      }, 1000);
+    }
+
+    function showHint() {
+      const card = spellCards[spellIndex];
+      const word = card.kadazandusun;
+      const hint = word[0] + '_'.repeat(word.length - 2) + word[word.length - 1];
+      document.getElementById('spellHint').textContent = `Hint: ${hint} (${word.length} letters)`;
+    }
+
+    function checkSpelling() {
+      const input = document.getElementById('spellInput').value.trim();
+      if (!input) return;
+      const card = spellCards[spellIndex];
+      const isCorrect = input.toLowerCase() === card.kadazandusun.toLowerCase();
+      const fb = document.getElementById('spellFeedback');
+      fb.classList.remove('hidden');
+      clearInterval(timerInterval);
+
+      if (isCorrect) {
+        correct++;
+        streak++;
+        multiplier = Math.min(5, Math.floor(streak / 3) + 1);
+        fb.textContent = `✅ Correct! "${card.kadazandusun}" means "${card.english}"`;
+        fb.style.background = '#122a1a';
+        fb.style.color = '#4ade80';
+        document.getElementById('spellInput').style.borderColor = '#4ade80';
+        fb.classList.add('anim-pop');
+        setTimeout(() => { fb.classList.remove('anim-pop'); nextSpelling(); }, 1400);
+      } else {
+        wrong++;
+        streak = 0;
+        multiplier = 1;
+        fb.textContent = `❌ The answer is "${card.kadazandusun}"`;
+        fb.style.background = '#2a1218';
+        fb.style.color = '#f87171';
+        document.getElementById('spellInput').style.borderColor = '#f87171';
+        document.getElementById('spellInput').classList.add('anim-shake');
+        setTimeout(() => document.getElementById('spellInput').classList.remove('anim-shake'), 500);
+        setTimeout(() => nextSpelling(), 2000);
+      }
+
+      document.getElementById('scoreCorrect').textContent = correct;
+      document.getElementById('scoreWrong').textContent = wrong;
+      document.getElementById('scoreStreak').textContent = streak;
+      document.getElementById('scoreMultiplier').textContent = multiplier + 'x';
+      updateStudyStats();
+    }
+
+    function skipSpelling() {
+      clearInterval(timerInterval);
+      nextSpelling();
+    }
+
+    function nextSpelling() {
+      spellIndex = (spellIndex + 1) % spellCards.length;
+      updateSpelling();
+    }
+
+    // Game Room Functions
+    let currentActiveRoomCode = null;
+    let recentRooms = [];
+    let roomPlayers = {};
+    let roomMessages = {};
+    let currentPlayerName = null;
+
+    function generateRoomCode() {
+      return Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+
+    function sendChatMessage() {
+      if (!currentActiveRoomCode) {
+        showToast("Join a room first!", "#f87171");
+        return;
+      }
+
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      const playerName = currentPlayerName || `Player${Math.floor(Math.random() * 9000) + 1000}`;
+      
+      if (!roomMessages[currentActiveRoomCode]) {
+        roomMessages[currentActiveRoomCode] = [];
+      }
+
+      const chatMsg = {
+        player: playerName,
+        text: message,
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        id: Date.now()
+      };
+
+      roomMessages[currentActiveRoomCode].push(chatMsg);
+      input.value = '';
+      renderChatMessages();
+      
+      const messagesDiv = document.getElementById('chatMessages');
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function renderChatMessages() {
+      const messagesDiv = document.getElementById('chatMessages');
+      if (!currentActiveRoomCode || !roomMessages[currentActiveRoomCode]) {
+        messagesDiv.innerHTML = `<div class="text-center py-4"><p class="text-xs" style="color: #7b9fcc;">Join a room to start chatting! 💭</p></div>`;
+        return;
+      }
+
+      const msgs = roomMessages[currentActiveRoomCode];
+      if (msgs.length === 0) {
+        messagesDiv.innerHTML = `<div class="text-center py-4"><p class="text-xs" style="color: #7b9fcc;">No messages yet. Say hello! 👋</p></div>`;
+        return;
+      }
+
+      messagesDiv.innerHTML = msgs.map(msg => {
+        const isCurrentPlayer = msg.player === currentPlayerName;
+        return `
+          <div class="text-xs animate-fade-in">
+            <div class="flex items-baseline gap-2 mb-1">
+              <span style="color: #e8a44a; font-weight: 700;">${msg.player}</span>
+              <span style="color: #7b9fcc; font-size: 10px;">${msg.time}</span>
+            </div>
+            <div class="px-3 py-2 rounded-lg" style="background: ${isCurrentPlayer ? '#1a3a2a' : '#2a1a3a'}; color: #f0e6d3; word-wrap: break-word;">
+              ${msg.text}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderOnlinePlayers() {
+      const playersDiv = document.getElementById('onlinePlayers');
+      
+      if (!currentActiveRoomCode || !roomPlayers[currentActiveRoomCode]) {
+        playersDiv.innerHTML = `<p class="text-xs" style="color: #7b9fcc;">No players online</p>`;
+        return;
+      }
+
+      const players = roomPlayers[currentActiveRoomCode];
+      if (players.length === 0) {
+        playersDiv.innerHTML = `<p class="text-xs" style="color: #7b9fcc;">No players online</p>`;
+        return;
+      }
+
+      playersDiv.innerHTML = players.map(player => `
+        <div class="flex items-center gap-2 p-2 rounded-lg" style="background: #122a1a;">
+          <span style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; display: inline-block;"></span>
+          <span class="text-xs" style="color: #f0e6d3;">${player}</span>
+        </div>
+      `).join('');
+    }
+
+    function createGameRoom() {
+      const roomName = document.getElementById('roomNameInput').value.trim();
+      if (!roomName) {
+        showToast("Please enter a room name!", "#f87171");
+        return;
+      }
+
+      const roomCode = generateRoomCode();
+      const playerName = `Player${Math.floor(Math.random() * 9000) + 1000}`;
+      currentPlayerName = playerName;
+
+      gameRooms[roomCode] = {
+        name: roomName,
+        created: new Date(),
+        createdTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        players: 1,
+        status: "waiting",
+        host: playerName
+      };
+
+      roomPlayers[roomCode] = [playerName];
+      roomMessages[roomCode] = [];
+
+      currentActiveRoomCode = roomCode;
+      displayRoomInfo(roomCode);
+      updateChatStatus();
+      document.getElementById('roomNameInput').value = '';
+      showToast(`Room created! Code: ${roomCode}`, "#4ade80");
+      renderLiveGames();
+    }
+
+    function joinGameRoom() {
+      const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+      if (!code) {
+        showToast("Please enter a room code!", "#f87171");
+        return;
+      }
+
+      if (!gameRooms[code]) {
+        showToast("Room not found!", "#f87171");
+        return;
+      }
+
+      const playerName = `Player${Math.floor(Math.random() * 9000) + 1000}`;
+      currentPlayerName = playerName;
+
+      gameRooms[code].players++;
+      
+      if (!roomPlayers[code]) {
+        roomPlayers[code] = [];
+      }
+      roomPlayers[code].push(playerName);
+
+      if (!roomMessages[code]) {
+        roomMessages[code] = [];
+      }
+
+      currentActiveRoomCode = code;
+      displayRoomInfo(code);
+      updateChatStatus();
+      document.getElementById('joinCodeInput').value = '';
+      showToast(`Joined room: ${code}`, "#4ade80");
+      renderLiveGames();
+    }
+
+    function updateChatStatus() {
+      const status = document.getElementById('chatStatus');
+      if (currentActiveRoomCode) {
+        status.textContent = '🟢 Online';
+        status.style.background = '#122a1a';
+        status.style.color = '#4ade80';
+        renderOnlinePlayers();
+        renderChatMessages();
+      } else {
+        status.textContent = 'Offline';
+        status.style.background = '#243b5e';
+        status.style.color = '#7b9fcc';
+        document.getElementById('chatMessages').innerHTML = `<div class="text-center py-4"><p class="text-xs" style="color: #7b9fcc;">Join a room to start chatting! 💭</p></div>`;
+        document.getElementById('onlinePlayers').innerHTML = `<p class="text-xs" style="color: #7b9fcc;">No players online</p>`;
+      }
+    }
+
+    function displayRoomInfo(code) {
+      const room = gameRooms[code];
+      const statusDiv = document.getElementById('roomStatus');
+      const statusText = room.status === "waiting" ? "⏳ Waiting to Start" : "🎮 Game in Progress";
+      const statusColor = room.status === "waiting" ? "#06b6d4" : "#4ade80";
+      statusDiv.innerHTML = `
+        <div class="rounded-2xl p-6" style="background: #1a2d4a; border: 2px solid #2a4a6e;">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <p class="text-lg font-heading font-700" style="color: #f0e6d3;">${room.name}</p>
+              <p class="text-sm" style="color: #7b9fcc;">Host: ${room.host}</p>
+            </div>
+            <p class="text-2xl font-heading font-800" style="color: #e8a44a;">Code: ${code}</p>
+          </div>
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <span style="color: ${statusColor}; font-weight: 700;">${statusText}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="users" style="width:16px;height:16px;color:#7b9fcc;"></i>
+              <span style="color: #7b9fcc; font-weight: 600;">${room.players} player${room.players > 1 ? 's' : ''}</span>
+            </div>
+          </div>
+          <div class="flex gap-3 justify-center flex-wrap">
+            ${room.status === "waiting" ? `<button onclick="startGameSession('${code}')" class="px-6 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;">
+              <i data-lucide="play" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Start Game
+            </button>` : ''}
+            <button onclick="leaveGameRoom('${code}')" class="px-6 py-2 rounded-lg text-sm font-600 transition-all hover:scale-105" style="background: #f87171; color: #fff;">
+              <i data-lucide="log-out" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>Leave
+            </button>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function startGameSession(code) {
+      const room = gameRooms[code];
+      room.status = "playing";
+      displayRoomInfo(code);
+      switchTab('spelling');
+      showToast(`Game started in ${room.name}! 🎮`, "#4ade80");
+      renderLiveGames();
+    }
+
+    function leaveGameRoom(code) {
+      if (gameRooms[code]) {
+        gameRooms[code].players = Math.max(0, gameRooms[code].players - 1);
+        
+        if (roomPlayers[code]) {
+          const idx = roomPlayers[code].indexOf(currentPlayerName);
+          if (idx > -1) {
+            roomPlayers[code].splice(idx, 1);
+          }
+        }
+
+        if (gameRooms[code].players === 0) {
+          recentRooms.unshift({...gameRooms[code], code: code, endedTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })});
+          recentRooms = recentRooms.slice(0, 5);
+          delete gameRooms[code];
+          delete roomPlayers[code];
+          delete roomMessages[code];
+        }
+      }
+      
+      if (currentActiveRoomCode === code) {
+        currentActiveRoomCode = null;
+        currentPlayerName = null;
+        const statusDiv = document.getElementById('roomStatus');
+        statusDiv.innerHTML = `<p class="text-center" style="color: #7b9fcc;" class="text-sm">No active room. Create or join one to get started!</p>`;
+      }
+      
+      showToast("Left the game room", "#7b9fcc");
+      updateChatStatus();
+      renderLiveGames();
+      renderRecentGames();
+    }
+
+    function renderLiveGames() {
+      const container = document.getElementById('liveGamesList');
+      const activeLiveGames = Object.entries(gameRooms).filter(([_, room]) => room.players > 0);
+
+      if (activeLiveGames.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6">
+            <p style="color: #7b9fcc;" class="text-sm">No active games right now. Create one to get started!</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = activeLiveGames.map(([code, room]) => {
+        const statusColor = room.status === "waiting" ? "#06b6d4" : "#4ade80";
+        const statusEmoji = room.status === "waiting" ? "⏳" : "🎮";
+        const isJoined = currentActiveRoomCode === code;
+        
+        return `
+          <div class="p-4 rounded-xl" style="background: #0f1a2e; border: 2px solid ${isJoined ? '#4ade80' : '#2a4a6e'};">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex-1">
+                <p class="font-heading font-700 mb-1" style="color: #f0e6d3;">${room.name}</p>
+                <p class="text-xs" style="color: #7b9fcc;">Host: ${room.host}</p>
+              </div>
+              <div class="text-right">
+                <p class="font-heading font-800 text-lg mb-1" style="color: #e8a44a;">${code}</p>
+                <span style="color: ${statusColor}; font-weight: 700; font-size: 12px;">${statusEmoji} ${room.status === "waiting" ? 'Waiting' : 'Playing'}</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="users" style="width:14px;height:14px;color:#7b9fcc;"></i>
+                <span style="color: #7b9fcc; font-size: 12px;">${room.players} player${room.players > 1 ? 's' : ''}</span>
+              </div>
+              <button onclick="quickJoinRoom('${code}')" class="px-3 py-1 rounded-lg text-xs font-600 transition-all hover:scale-105" style="background: #4ade80; color: #0f1a2e;">
+                <i data-lucide="log-in" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i>Join
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function renderRecentGames() {
+      const container = document.getElementById('recentGamesList');
+
+      if (recentRooms.length === 0) {
+        container.innerHTML = `<p style="color: #7b9fcc;" class="text-sm text-center py-4">No recent games</p>`;
+        return;
+      }
+
+      container.innerHTML = recentRooms.map(room => {
+        return `
+          <div class="p-3 rounded-lg" style="background: #1a2d4a; border: 1px solid #2a4a6e;">
+            <div class="flex items-center justify-between">
+              <div class="flex-1">
+                <p class="font-600 text-sm" style="color: #f0e6d3;">${room.name}</p>
+                <p class="text-xs" style="color: #7b9fcc;">Ended at ${room.endedTime}</p>
+              </div>
+              <p class="text-xs font-mono font-700" style="color: #e8a44a;">${room.code}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function quickJoinRoom(code) {
+      document.getElementById('joinCodeInput').value = code;
+      joinGameRoom();
+    }
+
+    // Pronunciation Functions
+    let pronIndex = 0;
+    let pronCards = [...vocabulary];
+    let pronCorrect = 0, pronWrong = 0;
+    const recognitionAPI = window.webkitSpeechRecognition || window.SpeechRecognition;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recordedAudio = null;
+    let isRecording = false;
+    let teacherVoices = {};
+    let teacherMediaRecorder = null;
+    let teacherRecordedChunks = [];
+    let isRecordingTeacher = false;
+
+    function updatePronunciation() {
+      if (pronCards.length === 0) return;
+      const card = pronCards[pronIndex];
+      document.getElementById('pronImage').src = card.image_url || '';
+      document.getElementById('pronImage').style.display = card.image_url ? 'block' : 'none';
+      document.getElementById('pronEmoji').textContent = card.emoji;
+      document.getElementById('pronWord').textContent = card.kadazandusun;
+      document.getElementById('pronTranslation').textContent = card.english;
+      document.getElementById('pronFeedback').classList.add('hidden');
+      document.getElementById('recognitionStatus').textContent = '';
+      document.getElementById('listenBtn').textContent = '🎤 Check My Voice';
+      document.getElementById('listenBtn').disabled = false;
+      document.getElementById('recordTeacherBtn').textContent = teacherVoices[card.kadazandusun] ? '✅ Standard Set' : '🎙️ Set Standard';
+      document.getElementById('recordTeacherBtn').disabled = false;
+      document.getElementById('playBtn').textContent = '🔊 Play Standard';
+      document.getElementById('playBtn').disabled = false;
+      document.getElementById('pronCorrect').textContent = pronCorrect;
+      document.getElementById('pronWrong').textContent = pronWrong;
+      recordedAudio = null;
+    }
+
+    function playPronunciation() {
+      if (recordedAudio) {
+        const audio = new Audio(recordedAudio);
+        audio.play().catch(() => {
+          showToast("Unable to play recorded voice", "#f87171");
+        });
+        return;
+      }
+
+      if (pronCards.length === 0) return;
+      const card = pronCards[pronIndex];
+      const playBtn = document.getElementById('playBtn');
+      playBtn.disabled = true;
+
+      if (teacherVoices[card.kadazandusun]) {
+        playBtn.textContent = '🔊 Playing Standard...';
+        const audio = new Audio(teacherVoices[card.kadazandusun]);
+        audio.onended = () => {
+          playBtn.disabled = false;
+          playBtn.textContent = recordedAudio ? '🎙️ Play My Voice' : '🔊 Play Standard';
+        };
+        audio.onerror = () => {
+          playBtn.disabled = false;
+          playBtn.textContent = recordedAudio ? '🎙️ Play My Voice' : '🔊 Play Standard';
+          showToast("Unable to play voice", "#f87171");
+        };
+        audio.play().catch(() => {
+          playBtn.disabled = false;
+          playBtn.textContent = recordedAudio ? '🎙️ Play My Voice' : '🔊 Play Standard';
+          showToast("Unable to play voice", "#f87171");
+        });
+      } else {
+        playBtn.textContent = '🔊 Playing Standard...';
+        const utterance = new SpeechSynthesisUtterance(card.kadazandusun);
+        utterance.lang = 'ms-MY';
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        utterance.onend = () => {
+          playBtn.disabled = false;
+          playBtn.textContent = recordedAudio ? '🎙️ Play My Voice' : '🔊 Play Standard';
+        };
+
+        utterance.onerror = () => {
+          playBtn.disabled = false;
+          playBtn.textContent = recordedAudio ? '🎙️ Play My Voice' : '🔊 Play Standard';
+          showToast("Unable to play voice", "#f87171");
+        };
+
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+      }
+    }
+
+    async function initDataSDK() {
+      if (!recognitionAPI) {
+        showToast("Speech recognition not supported", "#f87171");
+        return;
+      }
+
+      const recognition = new recognitionAPI();
+      recognition.lang = 'ms-MY';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      const card = pronCards[pronIndex];
+      const listenBtn = document.getElementById('listenBtn');
+      listenBtn.disabled = true;
+      listenBtn.textContent = '🎤 Listening...';
+      document.getElementById('recognitionStatus').textContent = 'Listening...';
+
+      recognition.onstart = () => {
+        document.getElementById('recognitionStatus').style.color = '#06b6d4';
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcript = transcript.trim();
+
+        const fb = document.getElementById('pronFeedback');
+        fb.classList.remove('hidden');
+        
+        const normalizedWord = card.kadazandusun.toLowerCase();
+        const normalizedTranscript = transcript.toLowerCase();
+        
+        if (normalizedTranscript.includes(normalizedWord) || normalizedWord.includes(normalizedTranscript.split(' ')[0])) {
+          pronCorrect++;
+          fb.textContent = `✅ Great! You said: "${transcript}"`;
+          fb.style.background = '#122a1a';
+          fb.style.color = '#4ade80';
+          fb.classList.add('anim-pop');
+          document.getElementById('recognitionStatus').textContent = '';
+          setTimeout(() => { fb.classList.remove('anim-pop'); nextPronunciation(); }, 1400);
+        } else {
+          pronWrong++;
+          fb.textContent = `❌ You said: "${transcript}". Try again: "${card.kadazandusun}"`;
+          fb.style.background = '#2a1218';
+          fb.style.color = '#f87171';
+          document.getElementById('recognitionStatus').textContent = '';
+          setTimeout(() => nextPronunciation(), 2000);
+        }
+
+        document.getElementById('pronCorrect').textContent = pronCorrect;
+        document.getElementById('pronWrong').textContent = pronWrong;
+      };
+
+      recognition.onerror = (event) => {
+        document.getElementById('recognitionStatus').textContent = 'Error: ' + event.error;
+        document.getElementById('recognitionStatus').style.color = '#f87171';
+        listenBtn.disabled = false;
+        listenBtn.textContent = '🎤 Check My Voice';
+      };
+
+      recognition.onend = () => {
+        listenBtn.disabled = false;
+        listenBtn.textContent = '🎤 Check My Voice';
+      };
+
+      recognition.start();
+    }
+
+    function skipPronunciation() {
+      nextPronunciation();
+    }
+
+    async function requestMicPermissionFirst() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (err) {
+        console.log("Microphone permission requested on load");
+      }
+    }
+
+    function nextPronunciation() {
+      pronIndex = (pronIndex + 1) % pronCards.length;
+      updatePronunciation();
+    }
+
+    async function recordTeacherVoice() {
+      if (pronCards.length === 0) return;
+      const card = pronCards[pronIndex];
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        teacherRecordedChunks = [];
+        teacherMediaRecorder = new MediaRecorder(stream);
+
+        teacherMediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            teacherRecordedChunks.push(event.data);
+          }
+        };
+
+        teacherMediaRecorder.onstop = async () => {
+          const blob = new Blob(teacherRecordedChunks, { type: 'audio/webm' });
+          
+          // Convert blob to base64
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64Audio = reader.result;
+            teacherVoices[card.kadazandusun] = base64Audio;
+            
+            // Save to sheet using image_url field for base64 audio
+            const result = await window.dataSdk.create({
+              player_name: "",
+              correct_answers: 0,
+              wrong_answers: 0,
+              streak: 0,
+              score: 0,
+              completed_at: "",
+              room_code: "",
+              room_join: "",
+              kadazandusun: card.kadazandusun,
+              english: "",
+              emoji: "",
+              category: "",
+              example: "",
+              image_url: base64Audio,
+              pronunciation: "teacher_voice",
+              visitor_id: "",
+              visited_at: "",
+              competition_id: "",
+              competition_name: "",
+              competition_host: "",
+              competition_players: 0,
+              competition_max_players: 0,
+              competition_status: "",
+              competition_created_at: "",
+              announcement_title: "",
+              announcement_content: "",
+              announcement_type: "",
+              announcement_created_at: "",
+              announcement_id: ""
+            });
+            
+            stream.getTracks().forEach(track => track.stop());
+            isRecordingTeacher = false;
+            
+            if (result.isOk) {
+              showToast(`Standard voice saved for "${card.kadazandusun}"! 🎉`, "#4ade80");
+              document.getElementById('recordingIndicator').classList.add('hidden');
+              document.getElementById('recordTeacherBtn').textContent = '✅ Standard Set';
+              document.getElementById('recordTeacherBtn').disabled = false;
+              document.getElementById('listenBtn').disabled = false;
+              document.getElementById('playBtn').disabled = false;
+              updatePronunciation();
+            } else {
+              showToast("Failed to save voice: " + (result.error?.message || "Unknown error"), "#f87171");
+              document.getElementById('recordingIndicator').classList.add('hidden');
+              document.getElementById('recordTeacherBtn').textContent = '🎙️ Set Standard';
+              document.getElementById('recordTeacherBtn').disabled = false;
+              document.getElementById('listenBtn').disabled = false;
+              document.getElementById('playBtn').disabled = false;
+            }
+          };
+          reader.readAsDataURL(blob);
+        };
+
+        isRecordingTeacher = true;
+        teacherMediaRecorder.start();
+        document.getElementById('recordingIndicator').classList.remove('hidden');
+        document.getElementById('recordTeacherBtn').textContent = '⏺️ Recording...';
+        document.getElementById('recordTeacherBtn').disabled = true;
+        document.getElementById('listenBtn').disabled = true;
+        document.getElementById('playBtn').disabled = true;
+      } catch (err) {
+        showToast("Microphone access denied: " + err.message, "#f87171");
+      }
+    }
+
+    function stopRecording() {
+      if (teacherMediaRecorder && isRecordingTeacher) {
+        teacherMediaRecorder.stop();
+        isRecordingTeacher = false;
+      } else if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+      }
+    }
+
+    function openSetStandardModal() {
+      document.getElementById('setStandardModal').classList.remove('hidden');
+      document.getElementById('standardVoicePassword').value = '';
+      document.getElementById('standardVoicePassword').focus();
+    }
+
+    function closeSetStandardModal() {
+      document.getElementById('setStandardModal').classList.add('hidden');
+      document.getElementById('standardVoicePassword').value = '';
+    }
+
+    function verifyStandardVoicePassword() {
+      const password = document.getElementById('standardVoicePassword').value;
+      if (password === ADMIN_PASSWORD) {
+        closeSetStandardModal();
+        recordTeacherVoice();
+      } else {
+        showToast("Incorrect password! 🔒", "#f87171");
+        document.getElementById('standardVoicePassword').value = '';
+      }
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
+      document.getElementById('tabFlashcard').classList.toggle('tab-active', tab === 'flashcard');
+      document.getElementById('tabSpelling').classList.toggle('tab-active', tab === 'spelling');
+      document.getElementById('tabPronunciation').classList.toggle('tab-active', tab === 'pronunciation');
+      document.getElementById('tabManage').classList.toggle('tab-active', tab === 'manage');
+      document.getElementById('tabGameroom').classList.toggle('tab-active', tab === 'gameroom');
+      document.getElementById('tabLeaderboard').classList.toggle('tab-active', tab === 'leaderboard');
+      document.getElementById('tabCompetition').classList.toggle('tab-active', tab === 'competition');
+      document.getElementById('tabAnnouncements').classList.toggle('tab-active', tab === 'announcements');
+      document.getElementById('tabStudy').classList.toggle('tab-active', tab === 'study');
+      document.getElementById('flashcardView').classList.toggle('hidden', tab !== 'flashcard');
+      document.getElementById('spellingView').classList.toggle('hidden', tab !== 'spelling');
+      document.getElementById('pronunciationView').classList.toggle('hidden', tab !== 'pronunciation');
+      document.getElementById('manageView').classList.toggle('hidden', tab !== 'manage');
+      document.getElementById('gameroomView').classList.toggle('hidden', tab !== 'gameroom');
+      document.getElementById('leaderboardView').classList.toggle('hidden', tab !== 'leaderboard');
+      document.getElementById('competitionView').classList.toggle('hidden', tab !== 'competition');
+      document.getElementById('announcementsView').classList.toggle('hidden', tab !== 'announcements');
+      document.getElementById('studyView').classList.toggle('hidden', tab !== 'study');
+      document.getElementById('tabFlashcard').style.color = tab === 'flashcard' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabSpelling').style.color = tab === 'spelling' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabPronunciation').style.color = tab === 'pronunciation' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabManage').style.color = tab === 'manage' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabGameroom').style.color = tab === 'gameroom' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabLeaderboard').style.color = tab === 'leaderboard' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabCompetition').style.color = tab === 'competition' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabAnnouncements').style.color = tab === 'announcements' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabStudy').style.color = tab === 'study' ? (cfg.text_color || defaultConfig.text_color) : (cfg.secondary_color || defaultConfig.secondary_color);
+      document.getElementById('tabFlashcard').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabSpelling').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabPronunciation').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabManage').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabGameroom').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabLeaderboard').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabCompetition').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabAnnouncements').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      document.getElementById('tabStudy').style.borderColor = cfg.accent_color || defaultConfig.accent_color;
+      if (tab === 'spelling') updateSpelling();
+      if (tab === 'pronunciation') updatePronunciation();
+      if (tab === 'competition') renderCompetitions();
+      if (tab === 'announcements') renderAnnouncements();
+      if (tab === 'manage') resetManageView();
+      if (tab === 'study') {
+        renderVocabularyList();
+        renderStudyCategories();
+        updateStudyStats();
+      }
+    }
+
+    let selectedImageUrl = null;
+    let useImageAsVisual = false;
+
+    function handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      if (!file.type.startsWith('image/')) {
+        showToast("Select JPG or PNG image only", "#f87171");
+        clearImageUpload();
+        return;
+      }
+
+      if (file.size > 50 * 1024) {
+        showToast("Image too large! Max 50KB. Compress it first.", "#f87171");
+        clearImageUpload();
+        return;
+      }
+
+      const reader = new FileReader();
+      
+      reader.onerror = () => {
+        showToast("Failed to read image", "#f87171");
+        clearImageUpload();
+      };
+
+      reader.onload = (e) => {
+        try {
+          const base64String = e.target.result;
+          
+          if (base64String.length > 40 * 1024) {
+            showToast("Image encoding too large. Use a smaller image (under 30KB).", "#f87171");
+            clearImageUpload();
+            return;
+          }
+
+          const testImg = new Image();
+          testImg.onload = () => {
+            selectedImageUrl = base64String;
+            document.getElementById('previewImg').src = base64String;
+            document.getElementById('imagePreview').classList.remove('hidden');
+            document.getElementById('newCardEmoji').value = '';
+            showToast("Image ready! ✅", "#4ade80");
+          };
+
+          testImg.onerror = () => {
+            showToast("Image format not supported", "#f87171");
+            clearImageUpload();
+          };
+
+          testImg.src = base64String;
+        } catch (error) {
+          showToast("Error processing image: " + error.message, "#f87171");
+          clearImageUpload();
+        }
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function clearImageUpload() {
+      selectedImageUrl = null;
+      useImageAsVisual = false;
+      document.getElementById('imagePreview').classList.add('hidden');
+      document.getElementById('previewImg').src = '';
+      // Clear both URL and file inputs
+      document.getElementById('newCardImageUrl').value = '';
+      document.getElementById('newCardImageFile').value = '';
+    }
+
+    function previewImageFile() {
+      const fileInput = document.getElementById('newCardImageFile');
+      const file = fileInput.files[0];
+      
+      if (file) {
+        // Clear URL input when file is selected
+        document.getElementById('newCardImageUrl').value = '';
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('previewImg').src = e.target.result;
+          document.getElementById('imagePreview').classList.remove('hidden');
+          selectedImageUrl = e.target.result; // Store base64 data
+          useImageAsVisual = true;
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function resetManageView() {
+      if (!isAdminUnlocked) {
+        document.getElementById('managePasswordSection').classList.remove('hidden');
+        document.getElementById('manageCardsContent').classList.add('hidden');
+        document.getElementById('adminPassword').value = '';
+      } else {
+        document.getElementById('managePasswordSection').classList.add('hidden');
+        document.getElementById('manageCardsContent').classList.remove('hidden');
+      }
+      selectedImageUrl = null;
+      useImageAsVisual = false;
+      document.getElementById('imagePreview').classList.add('hidden');
+    }
+
+    function verifyAdminPassword() {
+      const password = document.getElementById('adminPassword').value;
+      if (password === ADMIN_PASSWORD) {
+        isAdminUnlocked = true;
+        document.getElementById('managePasswordSection').classList.add('hidden');
+        document.getElementById('manageCardsContent').classList.remove('hidden');
+        showToast("Admin access granted! 🔓", "#4ade80");
+      } else {
+        showToast("Incorrect password! 🔒", "#f87171");
+        document.getElementById('adminPassword').value = '';
+      }
+    }
+
+    function showToast(message, color) {
+      const toast = document.createElement('div');
+      toast.className = 'toast font-600 text-sm';
+      toast.textContent = message;
+      toast.style.background = color;
+      toast.style.color = '#fff';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
+    function applyConfig(config) {
+      const bg = config.background_color || defaultConfig.background_color;
+      const surface = config.surface_color || defaultConfig.surface_color;
+      const text = config.text_color || defaultConfig.text_color;
+      const accent = config.accent_color || defaultConfig.accent_color;
+      const secondary = config.secondary_color || defaultConfig.secondary_color;
+      const fontFamily = config.font_family || defaultConfig.font_family;
+      const fontSize = config.font_size || defaultConfig.font_size;
+
+      document.getElementById('app').style.background = bg;
+
+      const title = document.getElementById('mainTitle');
+      title.textContent = config.main_title || defaultConfig.main_title;
+      title.style.color = text;
+      title.style.fontFamily = `${fontFamily}, sans-serif`;
+      title.style.fontSize = `${fontSize * 2}px`;
+
+      const subtitle = document.getElementById('subtitleText');
+      subtitle.textContent = config.subtitle_text || defaultConfig.subtitle_text;
+      subtitle.style.color = secondary;
+      subtitle.style.fontSize = `${fontSize}px`;
+
+      renderCategories();
+      renderDifficulty();
+      renderProgressDots();
+      switchTab(currentTab);
+    }
+
+    function lighten(hex, percent) {
+      const num = parseInt(hex.replace('#', ''), 16);
+      const r = Math.min(255, (num >> 16) + Math.round(255 * percent / 100));
+      const g = Math.min(255, ((num >> 8) & 0x00FF) + Math.round(255 * percent / 100));
+      const b = Math.min(255, (num & 0x0000FF) + Math.round(255 * percent / 100));
+      return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+    }
+
+    window.elementSdk.init({
+      defaultConfig,
+      onConfigChange: async (config) => applyConfig(config),
+      mapToCapabilities: (config) => ({
+        recolorables: [
+          { get: () => config.background_color || defaultConfig.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({ background_color: v }); } },
+          { get: () => config.surface_color || defaultConfig.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({ surface_color: v }); } },
+          { get: () => config.text_color || defaultConfig.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({ text_color: v }); } },
+          { get: () => config.accent_color || defaultConfig.accent_color, set: (v) => { config.accent_color = v; window.elementSdk.setConfig({ accent_color: v }); } },
+          { get: () => config.secondary_color || defaultConfig.secondary_color, set: (v) => { config.secondary_color = v; window.elementSdk.setConfig({ secondary_color: v }); } },
+        ],
+        borderables: [],
+        fontEditable: {
+          get: () => config.font_family || defaultConfig.font_family,
+          set: (v) => { config.font_family = v; window.elementSdk.setConfig({ font_family: v }); }
+        },
+        fontSizeable: {
+          get: () => config.font_size || defaultConfig.font_size,
+          set: (v) => { config.font_size = v; window.elementSdk.setConfig({ font_size: v }); }
+        }
+      }),
+      mapToEditPanelValues: (config) => new Map([
+        ["main_title", config.main_title || defaultConfig.main_title],
+        ["subtitle_text", config.subtitle_text || defaultConfig.subtitle_text],
+        ["study_title", config.study_title || defaultConfig.study_title]
+      ])
+    });
+
+    // Initialize Data SDK
+    (async function() {
+      const result = await window.dataSdk.init(dataHandler);
+      if (!result.isOk) {
+        console.error("Failed to initialize Data SDK");
+      }
+    })();
+
+    // Initialize UI
+    renderCategories();
+    renderDifficulty();
+    updateFlashcard();
+    updateSpelling();
+    updatePronunciation();
+    updateStudyStats();
+    renderVocabularyList();
+    renderStudyCategories();
+    initializePlayerName();
+    lucide.createIcons();
+
+    // Request microphone permission for pronunciation
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => stream.getTracks().forEach(track => track.stop()))
+        .catch(() => {});
+    }
+   </script>
+  </div>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9e4b3850f1368117',t:'MTc3NDkxNjc1OS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
