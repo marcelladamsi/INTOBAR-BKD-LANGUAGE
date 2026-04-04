@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# Lock file (optional if you wish to keep versioned)
+package-lock.json
+
+# VS Code settings
+.vscode/
+
+# Auto-push helper
+auto-push.js
+
+# OS files
+.DS_Store
+Thumbs.db

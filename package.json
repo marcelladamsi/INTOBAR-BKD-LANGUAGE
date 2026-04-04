@@ -1,0 +1,12 @@
+{
+  "name": "game-pertama",
+  "version": "1.0.0",
+  "description": "Auto-sync project",
+  "main": "auto-push.js",
+  "scripts": {
+    "sync": "node auto-push.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3"
+  }
+}
